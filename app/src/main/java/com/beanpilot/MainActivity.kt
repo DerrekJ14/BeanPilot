@@ -4,10 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beanpilot.ui.dashboard.DashboardScreen
+import com.beanpilot.ui.dashboard.DashboardViewModel
 import com.beanpilot.ui.theme.BeanPilotTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -19,7 +18,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             BeanPilotTheme {
-                val viewModel: com.beanpilot.ui.dashboard.DashboardViewModel = hiltViewModel()
+                val viewModel: DashboardViewModel = hiltViewModel()
                 DashboardScreen(viewModel = viewModel)
             }
         }

@@ -3,6 +3,7 @@ package com.beanpilot.di
 import android.content.Context
 import androidx.room.Room
 import com.beanpilot.data.local.AppDatabase
+import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_1_2
 import com.beanpilot.data.local.dao.CoffeeBeanDao
 import com.beanpilot.data.local.dao.ShotDao
 import dagger.Module
@@ -41,7 +42,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "beanpilot-db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides

@@ -14,4 +14,7 @@ interface ShotDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(shot: ShotEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(shots: List<ShotEntity>)
 }
