@@ -59,12 +59,25 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
     var address by rememberSaveable { mutableStateOf(uiState.machineAddress) }
     var selectedShotId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showCoffeeLibrary by rememberSaveable { mutableStateOf(false) }
+    var showProfileManager by rememberSaveable { mutableStateOf(false) }
+    var showDashboardSettings by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(showProfileManager) {
+        if (showProfileManager) viewModel.loadProfiles()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (showCoffeeLibrary) "Coffee Library" else "BeanPilot Dashboard")
+                    Text(
+                        when {
+                            showCoffeeLibrary -> "Coffee Library"
+                            showProfileManager -> "GaggiMate Profiles"
+                            showDashboardSettings -> "Dashboard Layout"
+                            else -> "BeanPilot Dashboard"
+                        },
+                    )
                 },
             )
         },
@@ -79,6 +92,38 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 onBack = { showCoffeeLibrary = false },
                 modifier = Modifier.padding(paddingValues),
             )
+        } else if (showDashboardSettings) {
+            DashboardSettingsScreen(
+                selectedLayout = uiState.profileUiState.layout,
+                onSelectLayout = {
+                    viewModel.setDashboardLayout(it)
+                    showDashboardSettings = false
+                },
+                onBack = { showDashboardSettings = false },
+                modifier = Modifier.padding(paddingValues),
+            )
+        } else if (showProfileManager) {
+            val editor = uiState.profileUiState.editingProfile
+            if (editor == null) {
+                ProfileManagerScreen(
+                    state = uiState.profileUiState,
+                    onReload = viewModel::loadProfiles,
+                    onSelect = viewModel::selectProfile,
+                    onEdit = viewModel::loadProfileForEditing,
+                    onImport = viewModel::importProfile,
+                    onBack = { showProfileManager = false },
+                    modifier = Modifier.padding(paddingValues),
+                )
+            } else {
+                ProfileEditorScreen(
+                    profile = editor,
+                    busy = uiState.profileUiState.loading,
+                    message = uiState.profileUiState.message,
+                    onSave = viewModel::saveProfile,
+                    onCancel = viewModel::closeProfileEditor,
+                    modifier = Modifier.padding(paddingValues),
+                )
+            }
         } else if (selectedShot != null) {
             ShotReviewScreen(
                 shot = selectedShot,
@@ -98,52 +143,55 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
             item {
-                Button(
-                    onClick = { showCoffeeLibrary = true },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Coffee library (${uiState.coffeeBeans.size})")
+                    TextButton(onClick = { showCoffeeLibrary = true }, modifier = Modifier.weight(1f)) {
+                        Text("Coffee (${uiState.coffeeBeans.size})")
+                    }
+                    TextButton(
+                        onClick = { showProfileManager = true },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Profiles")
+                    }
+                    TextButton(onClick = { showDashboardSettings = true }) {
+                        Text("Layout")
+                    }
                 }
             }
-            item {
-                ConnectionCard(
-                    address = address,
-                    onAddressChange = { address = it },
-                    onConnect = { viewModel.connectToMachine(address) },
-                    onDisconnect = viewModel::disconnectFromMachine,
-                    onSyncHistory = viewModel::syncShotHistory,
-                    uiState = uiState,
-                )
+            if (uiState.profileUiState.layout == DashboardLayout.BrewStation) {
+                item {
+                    MachineControlCard(
+                        connected = uiState.connection.status == MachineConnectionStatus.Connected,
+                        activeProfile = uiState.telemetry.activeProfile,
+                        state = uiState.profileUiState,
+                        onOpenProfiles = { showProfileManager = true },
+                        onStartBrew = viewModel::startBrew,
+                        onConfirmBrew = viewModel::confirmBrewStart,
+                        onCancelBrew = viewModel::cancelBrewStart,
+                        onStartFlush = viewModel::startFlush,
+                        onStopFlush = viewModel::stopFlush,
+                        onStopFlushManually = viewModel::stopFlushManually,
+                    )
+                }
             }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = "Machine status",
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Thermostat,
-                                contentDescription = null,
-                            )
-                            Text(
-                                text = uiState.telemetry.machineState ?: "Waiting for telemetry",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        Text(
-                            text = "Profile: ${uiState.telemetry.activeProfile ?: "—"}",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
+            if (uiState.profileUiState.layout != DashboardLayout.BrewStation) {
+                item {
+                    ConnectionCard(
+                        address = address,
+                        onAddressChange = { address = it },
+                        onConnect = { viewModel.connectToMachine(address) },
+                        onDisconnect = viewModel::disconnectFromMachine,
+                        onSyncHistory = viewModel::syncShotHistory,
+                        uiState = uiState,
+                    )
+                }
+            }
+            if (uiState.profileUiState.layout == DashboardLayout.Classic) {
+                item {
+                    MachineStatusCard(uiState)
                 }
             }
 
@@ -156,11 +204,13 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                         title = "Temperature",
                         value = uiState.telemetry.temperatureC?.let { "${it.oneDecimal()}°C" } ?: "—",
                         modifier = Modifier.weight(1f),
+                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
                     )
                     MetricCard(
                         title = "Pressure",
                         value = uiState.telemetry.pressureBar?.let { "${it.oneDecimal()} bar" } ?: "—",
                         modifier = Modifier.weight(1f),
+                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
                     )
                 }
             }
@@ -174,11 +224,50 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                         title = "Flow",
                         value = uiState.telemetry.flowMlPerMin?.let { "${it.oneDecimal()} ml/min" } ?: "—",
                         modifier = Modifier.weight(1f),
+                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
                     )
                     MetricCard(
                         title = "Scale weight",
                         value = uiState.telemetry.weightGr?.let { "${it.oneDecimal()} g" } ?: "—",
                         modifier = Modifier.weight(1f),
+                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
+                    )
+                }
+            }
+
+            if (uiState.profileUiState.layout != DashboardLayout.Classic) {
+                item {
+                    MachineStatusCard(uiState)
+                }
+            }
+
+            if (uiState.profileUiState.layout == DashboardLayout.Classic ||
+                uiState.profileUiState.layout == DashboardLayout.Compact
+            ) {
+                item {
+                    MachineControlCard(
+                        connected = uiState.connection.status == MachineConnectionStatus.Connected,
+                        activeProfile = uiState.telemetry.activeProfile,
+                        state = uiState.profileUiState,
+                        onOpenProfiles = { showProfileManager = true },
+                        onStartBrew = viewModel::startBrew,
+                        onConfirmBrew = viewModel::confirmBrewStart,
+                        onCancelBrew = viewModel::cancelBrewStart,
+                        onStartFlush = viewModel::startFlush,
+                        onStopFlush = viewModel::stopFlush,
+                        onStopFlushManually = viewModel::stopFlushManually,
+                    )
+                }
+            }
+            if (uiState.profileUiState.layout == DashboardLayout.BrewStation) {
+                item {
+                    ConnectionCard(
+                        address = address,
+                        onAddressChange = { address = it },
+                        onConnect = { viewModel.connectToMachine(address) },
+                        onDisconnect = viewModel::disconnectFromMachine,
+                        onSyncHistory = viewModel::syncShotHistory,
+                        uiState = uiState,
                     )
                 }
             }
@@ -211,6 +300,29 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         }
     }
 }
+}
+
+@Composable
+private fun MachineStatusCard(uiState: DashboardUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Machine status", style = MaterialTheme.typography.titleLarge)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Filled.Thermostat, contentDescription = null)
+                Text(
+                    uiState.telemetry.machineState ?: "Waiting for telemetry",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            Text("Profile: ${uiState.telemetry.activeProfile ?: "—"}")
+        }
+    }
 }
 
 @Composable
@@ -282,12 +394,13 @@ private fun MetricCard(
     title: String,
     value: String,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     Card(modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(if (compact) 10.dp else 16.dp),
         ) {
             Text(
                 text = title,
@@ -296,7 +409,7 @@ private fun MetricCard(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
             )
         }
     }

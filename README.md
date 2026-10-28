@@ -15,6 +15,9 @@ This repository now includes the initial project skeleton for the requested Andr
 - Per-shot `.slog` download and decoding for pressure, temperature, flow, and weight trends
 - Local shot reviews for coffee, dose, grinder setting, rating, and tasting notes
 - A local coffee library linked to shot reviews
+- GaggiMate profile browsing, selection, editing, and JSON import
+- Remote process start and hold-to-flush controls
+- Selectable Brew Station, Classic, and Compact dashboard layouts
 - Dashboard controls for configuring, connecting, and disconnecting from the machine
 
 ## Required setup
@@ -39,4 +42,10 @@ Selecting **Review shot** fetches the individual `/api/history/<six-digit-id>.sl
 
 Add coffees in **Coffee library** and link each to a shot review; coffee metadata and shot links are stored locally. The GaggiMate `beanType` field is updated with the linked bean name on review sync.
 
-The connection, shot-index import, individual shot review, and notes sync have been verified against the physical GaggiMate device. Shot-log parsing and notes-merge behavior have unit coverage against the documented binary format and notes schema.
+Open **Profiles** to list profiles stored on GaggiMate, select one, load it into the multi-phase editor, or import a profile JSON file from the device. The editor validates pressure/flow pump targets, phase timings, transitions, valve state, temperature, and stop conditions before saving to the machine. Profile JSON follows the [GaggiMate profile schema](https://github.com/jniebuhr/gaggimate/blob/master/schema/profile.json).
+
+**Start process** sends GaggiMate's documented current-mode activation command. If the machine requests warning confirmation, BeanPilot displays the warnings and requires an explicit confirmation. The API does not document a separate remote brew-stop command, so stop a running brew using the machine's normal stop control. **Press and hold to flush** sends the documented flush start/stop requests; stop-on-release behavior depends on the flush duration configured on GaggiMate. Separate Start flush and Stop flush buttons are available as well.
+
+Use **Layout** to switch between **Brew Station** (controls first), **Classic** (connection and telemetry first), and **Compact** (smaller metrics and grouped controls). The selected layout is saved on the device; Brew Station is the initial default.
+
+The connection, shot-index import, individual shot review, notes sync, profile-list retrieval, and profile loading have been verified against the physical GaggiMate device. Brew and flush actuation were not triggered during testing. Shot-log parsing, notes merging, and profile validation have unit coverage.

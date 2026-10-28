@@ -18,8 +18,21 @@ class MachinePreferences @Inject constructor(
         preferences.edit().putString(MACHINE_ADDRESS_KEY, address).apply()
     }
 
+    fun getDashboardLayout(): String =
+        preferences.getString(DASHBOARD_LAYOUT_KEY, DEFAULT_DASHBOARD_LAYOUT)
+            ?.takeIf { it in DASHBOARD_LAYOUTS }
+            ?: DEFAULT_DASHBOARD_LAYOUT
+
+    fun saveDashboardLayout(layout: String) {
+        require(layout in DASHBOARD_LAYOUTS) { "Unknown dashboard layout." }
+        preferences.edit().putString(DASHBOARD_LAYOUT_KEY, layout).apply()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "beanpilot_preferences"
         const val MACHINE_ADDRESS_KEY = "gaggimate_address"
+        const val DASHBOARD_LAYOUT_KEY = "dashboard_layout"
+        const val DEFAULT_DASHBOARD_LAYOUT = "brew_station"
+        val DASHBOARD_LAYOUTS = setOf("brew_station", "classic", "compact")
     }
 }
