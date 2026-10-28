@@ -6,13 +6,17 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "shots",
-    indices = [Index(value = ["sourceId"], unique = true)],
+    indices = [
+        Index(value = ["sourceId"], unique = true),
+        Index(value = ["coffeeBeanId"]),
+    ],
 )
 data class ShotEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sourceId: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val coffeeName: String? = null,
+    val coffeeBeanId: Long? = null,
     val doseInGr: Double? = null,
     val doseOutGr: Double? = null,
     val brewTimeMs: Long,

@@ -13,6 +13,8 @@ import com.beanpilot.data.remote.mergeReview
 import com.beanpilot.data.remote.MachineConnectionState
 import com.beanpilot.data.remote.MachineConnectionStatus
 import com.beanpilot.data.repository.ShotRepository
+import com.beanpilot.data.repository.CoffeeBeanRepository
+import com.beanpilot.domain.model.CoffeeBean
 import com.beanpilot.domain.model.ShotRecord
 import com.beanpilot.domain.model.TelemetrySnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +31,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val shotRepository: ShotRepository,
+    private val coffeeBeanRepository: CoffeeBeanRepository,
     private val webSocketClient: GaggiMateWebSocketClient,
     private val historyClient: GaggiMateHistoryClient,
     private val machinePreferences: MachinePreferences,
@@ -41,11 +44,13 @@ class DashboardViewModel @Inject constructor(
         webSocketClient.telemetry,
         webSocketClient.connection,
         shotRepository.recentShots(),
-    ) { telemetry, connection, shots ->
+        coffeeBeanRepository.coffeeBeans(),
+    ) { telemetry, connection, shots, coffeeBeans ->
         DashboardUiState(
             telemetry = telemetry,
             connection = connection,
             recentShots = shots,
+            coffeeBeans = coffeeBeans,
         )
     }
 
@@ -64,15 +69,18 @@ class DashboardViewModel @Inject constructor(
 
     private val shotDetail = MutableStateFlow(ShotDetailUiState())
     private val reviewSaveMessage = MutableStateFlow<String?>(null)
+    private val coffeeSaveMessage = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<DashboardUiState> = combine(
         dashboardState,
         shotDetail,
         reviewSaveMessage,
-    ) { state, detail, saveMessage ->
+        coffeeSaveMessage,
+    ) { state, detail, saveMessage, coffeeMessage ->
         state.copy(
             shotDetail = detail,
             reviewSaveMessage = saveMessage,
+            coffeeSaveMessage = coffeeMessage,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -220,10 +228,44 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    fun saveCoffeeBean(bean: CoffeeBean) {
+        coffeeSaveMessage.value = null
+        viewModelScope.launch {
+            try {
+                require(bean.beanName.isNotBlank()) { "Coffee name is required." }
+                require(bean.roaster.isNotBlank()) { "Roaster is required." }
+                coffeeBeanRepository.save(bean)
+                coffeeSaveMessage.value = "Coffee saved."
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e(TAG, "Could not save coffee", exception)
+                coffeeSaveMessage.value = exception.message ?: "Could not save coffee."
+            }
+        }
+    }
+
+    fun deleteCoffeeBean(coffeeBeanId: Long) {
+        viewModelScope.launch {
+            try {
+                shotRepository.unlinkCoffeeBean(coffeeBeanId)
+                coffeeBeanRepository.delete(coffeeBeanId)
+                coffeeSaveMessage.value = "Coffee removed; linked shots were unlinked."
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e(TAG, "Could not remove coffee", exception)
+                coffeeSaveMessage.value = exception.message ?: "Could not remove coffee."
+            }
+        }
+    }
+
     private suspend fun saveLocalNotes(shot: ShotRecord, notes: GaggiMateShotNotes) {
+        val bean = notes.beanType?.let { coffeeBeanRepository.findByName(it) }
         shotRepository.updateShotReview(
             shot.copy(
                 coffeeName = notes.beanType ?: shot.coffeeName,
+                coffeeBeanId = bean?.id ?: shot.coffeeBeanId,
                 doseInGr = notes.doseIn?.toDoubleOrNull() ?: shot.doseInGr,
                 doseOutGr = notes.doseOut?.toDoubleOrNull() ?: shot.doseOutGr,
                 ratio = notes.ratio?.toDoubleOrNull() ?: shot.ratio,
@@ -261,11 +303,13 @@ data class DashboardUiState(
     val telemetry: TelemetrySnapshot = TelemetrySnapshot(),
     val connection: MachineConnectionState = MachineConnectionState(),
     val recentShots: List<ShotRecord> = emptyList(),
+    val coffeeBeans: List<CoffeeBean> = emptyList(),
     val machineAddress: String = "",
     val historySyncMessage: String? = null,
     val addressError: String? = null,
     val shotDetail: ShotDetailUiState = ShotDetailUiState(),
     val reviewSaveMessage: String? = null,
+    val coffeeSaveMessage: String? = null,
 )
 
 data class ShotDetailUiState(

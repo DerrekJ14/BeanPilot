@@ -21,6 +21,7 @@ class ShotRepository @Inject constructor(
                     sourceId = entity.sourceId,
                     timestamp = entity.timestamp,
                     coffeeName = entity.coffeeName,
+                    coffeeBeanId = entity.coffeeBeanId,
                     doseInGr = entity.doseInGr,
                     doseOutGr = entity.doseOutGr,
                     brewTimeMs = entity.brewTimeMs,
@@ -42,6 +43,7 @@ class ShotRepository @Inject constructor(
                 sourceId = shot.sourceId,
                 timestamp = shot.timestamp,
                 coffeeName = shot.coffeeName,
+                coffeeBeanId = shot.coffeeBeanId,
                 doseInGr = shot.doseInGr,
                 doseOutGr = shot.doseOutGr,
                 brewTimeMs = shot.brewTimeMs,
@@ -86,6 +88,7 @@ class ShotRepository @Inject constructor(
                 sourceId = shot.sourceId,
                 timestamp = shot.timestamp,
                 coffeeName = shot.coffeeName,
+                coffeeBeanId = shot.coffeeBeanId,
                 doseInGr = shot.doseInGr,
                 doseOutGr = shot.doseOutGr,
                 brewTimeMs = shot.brewTimeMs,
@@ -93,9 +96,14 @@ class ShotRepository @Inject constructor(
                 profileUsed = shot.profileUsed,
                 grinderSetting = shot.grinderSetting,
                 rating = shot.rating,
+                balanceTaste = shot.balanceTaste,
                 incomplete = shot.incomplete,
                 notes = shot.notes,
             ),
         )
+    }
+
+    suspend fun unlinkCoffeeBean(coffeeBeanId: Long) {
+        shotDao.clearCoffeeBeanLink(coffeeBeanId)
     }
 }

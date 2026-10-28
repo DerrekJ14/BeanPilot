@@ -43,4 +43,6 @@ interface ShotDao {
     @Update
     suspend fun update(shot: ShotEntity)
 
+    @Query("UPDATE shots SET coffeeBeanId = NULL WHERE coffeeBeanId = :coffeeBeanId")
+    suspend fun clearCoffeeBeanLink(coffeeBeanId: Long)
 }

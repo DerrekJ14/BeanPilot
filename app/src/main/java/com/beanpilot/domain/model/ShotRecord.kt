@@ -5,6 +5,7 @@ data class ShotRecord(
     val sourceId: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val coffeeName: String? = null,
+    val coffeeBeanId: Long? = null,
     val doseInGr: Double? = null,
     val doseOutGr: Double? = null,
     val brewTimeMs: Long,

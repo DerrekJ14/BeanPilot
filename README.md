@@ -14,6 +14,7 @@ This repository now includes the initial project skeleton for the requested Andr
 - Automatic import and manual sync of the latest GaggiMate shot index
 - Per-shot `.slog` download and decoding for pressure, temperature, flow, and weight trends
 - Local shot reviews for coffee, dose, grinder setting, rating, and tasting notes
+- A local coffee library linked to shot reviews
 - Dashboard controls for configuring, connecting, and disconnecting from the machine
 
 ## Required setup
@@ -36,4 +37,6 @@ The documented status events provide temperature, pressure, flow, machine state,
 
 Selecting **Review shot** fetches the individual `/api/history/<six-digit-id>.slog` log and plots measured scale weight separately from estimated weight. It compares the final measured and estimated readings with the shot-index output and flags material discrepancies instead of treating estimates as measured beverage yield. Coffee, dose, grinder setting, rating, taste balance, and notes are saved locally and synced to GaggiMate through its WebSocket notes API. Existing remote note fields are fetched and merged before save to avoid erasing fields BeanPilot does not edit. Local values remain intact during later history imports.
 
-The connection, shot-index import, and individual shot review have been verified against the physical GaggiMate device. Shot-log parsing and notes-merge behavior have unit coverage against the documented binary format and notes schema.
+Add coffees in **Coffee library** and link each to a shot review; coffee metadata and shot links are stored locally. The GaggiMate `beanType` field is updated with the linked bean name on review sync.
+
+The connection, shot-index import, individual shot review, and notes sync have been verified against the physical GaggiMate device. Shot-log parsing and notes-merge behavior have unit coverage against the documented binary format and notes schema.

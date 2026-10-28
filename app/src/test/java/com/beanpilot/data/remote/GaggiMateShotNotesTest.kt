@@ -62,4 +62,27 @@ class GaggiMateShotNotesTest {
 
         assertEquals(0, merged.rating)
     }
+
+    @Test
+    fun `explicit empty coffee name and notes clear previously saved review fields`() {
+        val merged = GaggiMateShotNotes(
+            beanType = "Temporary coffee",
+            balanceTaste = "balanced",
+            notes = "Temporary test note",
+        ).mergeReview(
+            sourceId = "8",
+            rating = null,
+            coffeeName = "",
+            doseInGr = null,
+            doseOutGr = null,
+            ratio = null,
+            grinderSetting = null,
+            balanceTaste = "",
+            notes = "",
+        )
+
+        assertEquals("", merged.beanType)
+        assertEquals("", merged.balanceTaste)
+        assertEquals("", merged.notes)
+    }
 }

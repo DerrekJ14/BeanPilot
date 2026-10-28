@@ -28,17 +28,14 @@ fun GaggiMateShotNotes.mergeReview(
 ): GaggiMateShotNotes = copy(
     id = sourceId,
     rating = rating ?: 0,
-    beanType = coffeeName.nonBlankOr(beanType),
+    beanType = coffeeName ?: beanType,
     doseIn = doseInGr?.formatForGaggiMate() ?: doseIn,
     doseOut = doseOutGr?.formatForGaggiMate() ?: doseOut,
     ratio = ratio?.formatForGaggiMate() ?: this.ratio,
     grindSetting = grinderSetting?.formatForGaggiMate() ?: grindSetting,
-    balanceTaste = balanceTaste.nonBlankOr(this.balanceTaste),
-    notes = notes.nonBlankOr(this.notes),
+    balanceTaste = balanceTaste ?: this.balanceTaste,
+    notes = notes ?: this.notes,
 )
-
-private fun String?.nonBlankOr(fallback: String?): String? =
-    this?.takeIf(String::isNotBlank) ?: fallback
 
 private fun Double.formatForGaggiMate(): String =
     java.math.BigDecimal.valueOf(this).stripTrailingZeros().toPlainString()
