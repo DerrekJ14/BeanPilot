@@ -7,6 +7,9 @@ import com.beanpilot.data.local.MachinePreferences
 import com.beanpilot.data.remote.GaggiMateEndpoint
 import com.beanpilot.data.remote.GaggiMateHistoryClient
 import com.beanpilot.data.remote.GaggiMateWebSocketClient
+import com.beanpilot.data.remote.GaggiMateShotSample
+import com.beanpilot.data.remote.GaggiMateShotNotes
+import com.beanpilot.data.remote.mergeReview
 import com.beanpilot.data.remote.MachineConnectionState
 import com.beanpilot.data.remote.MachineConnectionStatus
 import com.beanpilot.data.repository.ShotRepository
@@ -15,6 +18,7 @@ import com.beanpilot.domain.model.TelemetrySnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +49,7 @@ class DashboardViewModel @Inject constructor(
         )
     }
 
-    val uiState: StateFlow<DashboardUiState> = combine(
+    private val dashboardState = combine(
         machineState,
         machineAddress,
         historySyncMessage,
@@ -56,6 +60,20 @@ class DashboardViewModel @Inject constructor(
             historySyncMessage = syncMessage,
             addressError = error,
         )
+    }
+
+    private val shotDetail = MutableStateFlow(ShotDetailUiState())
+    private val reviewSaveMessage = MutableStateFlow<String?>(null)
+
+    val uiState: StateFlow<DashboardUiState> = combine(
+        dashboardState,
+        shotDetail,
+        reviewSaveMessage,
+    ) { state, detail, saveMessage ->
+        state.copy(
+            shotDetail = detail,
+            reviewSaveMessage = saveMessage,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -63,6 +81,7 @@ class DashboardViewModel @Inject constructor(
     )
 
     private var autoSyncedAddress: String? = null
+    private var shotDetailJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -106,6 +125,116 @@ class DashboardViewModel @Inject constructor(
         syncShotHistory(address)
     }
 
+    fun loadShotDetails(shot: ShotRecord) {
+        val sourceId = shot.sourceId
+        if (sourceId == null) {
+            shotDetail.value = ShotDetailUiState(
+                sourceId = null,
+                error = "Detailed shot data is available only for GaggiMate imports.",
+            )
+            return
+        }
+
+        shotDetailJob?.cancel()
+        val address = machineAddress.value
+        reviewSaveMessage.value = null
+        shotDetail.value = ShotDetailUiState(sourceId = sourceId, loading = true)
+        shotDetailJob = viewModelScope.launch {
+            try {
+                val detailsRequest = async { historyClient.fetchShotDetails(address, sourceId) }
+                val notesRequest = async {
+                    try {
+                        historyClient.fetchShotNotes(address, sourceId) to null
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (exception: Exception) {
+                        Log.e(TAG, "Could not load GaggiMate shot notes", exception)
+                        null to (exception.message ?: "Could not load notes from GaggiMate.")
+                    }
+                }
+                val details = detailsRequest.await()
+                val (notes, notesError) = notesRequest.await()
+                notes?.let { saveLocalNotes(shot, it) }
+                shotDetail.value = ShotDetailUiState(
+                    sourceId = sourceId,
+                    samples = details.samples,
+                    loading = false,
+                    incomplete = details.incomplete,
+                    notes = notes,
+                    notesLoaded = notesError == null,
+                    notesError = notesError,
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e(TAG, "Could not load GaggiMate shot details", exception)
+                shotDetail.value = ShotDetailUiState(
+                    sourceId = sourceId,
+                    error = exception.message ?: "Could not load shot details from GaggiMate.",
+                )
+            }
+        }
+    }
+
+    fun saveShotReview(shot: ShotRecord) {
+        viewModelScope.launch {
+            reviewSaveMessage.value = null
+            try {
+                shotRepository.updateShotReview(shot)
+                if (shot.sourceId == null) {
+                    reviewSaveMessage.value = "Review saved on this device."
+                    return@launch
+                }
+                reviewSaveMessage.value = "Saved on this device; syncing notes to GaggiMate…"
+                try {
+                    val existingNotes = historyClient.fetchShotNotes(machineAddress.value, shot.sourceId)
+                    val mergedNotes = (existingNotes ?: GaggiMateShotNotes()).mergeReview(
+                        sourceId = shot.sourceId,
+                        rating = shot.rating,
+                        coffeeName = shot.coffeeName,
+                        doseInGr = shot.doseInGr,
+                        doseOutGr = shot.doseOutGr,
+                        ratio = shot.ratio,
+                        grinderSetting = shot.grinderSetting,
+                        balanceTaste = shot.balanceTaste,
+                        notes = shot.notes,
+                    )
+                    historyClient.saveShotNotes(machineAddress.value, shot.sourceId, mergedNotes)
+                    reviewSaveMessage.value = "Review saved on this device and synced to GaggiMate."
+                    syncShotHistory(machineAddress.value)
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    Log.e(TAG, "Could not sync shot review to GaggiMate", exception)
+                    reviewSaveMessage.value =
+                        "Review saved locally, but GaggiMate sync failed: " +
+                            (exception.message ?: "unknown error")
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e(TAG, "Could not save shot review", exception)
+                reviewSaveMessage.value =
+                    exception.message ?: "Could not save this shot review."
+            }
+        }
+    }
+
+    private suspend fun saveLocalNotes(shot: ShotRecord, notes: GaggiMateShotNotes) {
+        shotRepository.updateShotReview(
+            shot.copy(
+                coffeeName = notes.beanType ?: shot.coffeeName,
+                doseInGr = notes.doseIn?.toDoubleOrNull() ?: shot.doseInGr,
+                doseOutGr = notes.doseOut?.toDoubleOrNull() ?: shot.doseOutGr,
+                ratio = notes.ratio?.toDoubleOrNull() ?: shot.ratio,
+                grinderSetting = notes.grindSetting?.toDoubleOrNull() ?: shot.grinderSetting,
+                rating = notes.rating?.takeIf { it in 1..5 } ?: shot.rating,
+                balanceTaste = notes.balanceTaste ?: shot.balanceTaste,
+                notes = notes.notes,
+            ),
+        )
+    }
+
     private fun syncShotHistory(address: String) {
         viewModelScope.launch {
             historySyncMessage.value = "Syncing shot history…"
@@ -135,4 +264,17 @@ data class DashboardUiState(
     val machineAddress: String = "",
     val historySyncMessage: String? = null,
     val addressError: String? = null,
+    val shotDetail: ShotDetailUiState = ShotDetailUiState(),
+    val reviewSaveMessage: String? = null,
+)
+
+data class ShotDetailUiState(
+    val sourceId: String? = null,
+    val samples: List<GaggiMateShotSample> = emptyList(),
+    val loading: Boolean = false,
+    val incomplete: Boolean = false,
+    val error: String? = null,
+    val notes: GaggiMateShotNotes? = null,
+    val notesLoaded: Boolean = false,
+    val notesError: String? = null,
 )

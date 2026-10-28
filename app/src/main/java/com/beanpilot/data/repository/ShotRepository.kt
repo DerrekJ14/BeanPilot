@@ -20,6 +20,7 @@ class ShotRepository @Inject constructor(
                     id = entity.id,
                     sourceId = entity.sourceId,
                     timestamp = entity.timestamp,
+                    coffeeName = entity.coffeeName,
                     doseInGr = entity.doseInGr,
                     doseOutGr = entity.doseOutGr,
                     brewTimeMs = entity.brewTimeMs,
@@ -27,6 +28,7 @@ class ShotRepository @Inject constructor(
                     profileUsed = entity.profileUsed,
                     grinderSetting = entity.grinderSetting,
                     rating = entity.rating,
+                    balanceTaste = entity.balanceTaste,
                     incomplete = entity.incomplete,
                     notes = entity.notes,
                 )
@@ -39,6 +41,51 @@ class ShotRepository @Inject constructor(
                 id = shot.id,
                 sourceId = shot.sourceId,
                 timestamp = shot.timestamp,
+                coffeeName = shot.coffeeName,
+                doseInGr = shot.doseInGr,
+                doseOutGr = shot.doseOutGr,
+                brewTimeMs = shot.brewTimeMs,
+                ratio = shot.ratio,
+                profileUsed = shot.profileUsed,
+                grinderSetting = shot.grinderSetting,
+                rating = shot.rating,
+                balanceTaste = shot.balanceTaste,
+                incomplete = shot.incomplete,
+                notes = shot.notes,
+            )
+        )
+    }
+
+    suspend fun importMachineShots(shots: List<GaggiMateShot>) {
+        shots.forEach { shot ->
+            shotDao.insertIfMissing(
+                ShotEntity(
+                    sourceId = shot.sourceId,
+                    timestamp = shot.timestampSeconds * 1_000,
+                    doseOutGr = shot.doseOutGr,
+                    brewTimeMs = shot.durationMs,
+                    profileUsed = shot.profileName,
+                    rating = shot.rating,
+                    incomplete = shot.incomplete,
+                ),
+            )
+            shotDao.updateImportedShot(
+                sourceId = shot.sourceId,
+                timestamp = shot.timestampSeconds * 1_000,
+                brewTimeMs = shot.durationMs,
+                profileUsed = shot.profileName,
+                incomplete = shot.incomplete,
+            )
+        }
+    }
+
+    suspend fun updateShotReview(shot: ShotRecord) {
+        shotDao.update(
+            ShotEntity(
+                id = shot.id,
+                sourceId = shot.sourceId,
+                timestamp = shot.timestamp,
+                coffeeName = shot.coffeeName,
                 doseInGr = shot.doseInGr,
                 doseOutGr = shot.doseOutGr,
                 brewTimeMs = shot.brewTimeMs,
@@ -48,23 +95,7 @@ class ShotRepository @Inject constructor(
                 rating = shot.rating,
                 incomplete = shot.incomplete,
                 notes = shot.notes,
-            )
-        )
-    }
-
-    suspend fun importMachineShots(shots: List<GaggiMateShot>) {
-        shotDao.insertAll(
-            shots.map { shot ->
-                ShotEntity(
-                    sourceId = shot.sourceId,
-                    timestamp = shot.timestampSeconds * 1_000,
-                    doseOutGr = shot.doseOutGr,
-                    brewTimeMs = shot.durationMs,
-                    profileUsed = shot.profileName,
-                    rating = shot.rating,
-                    incomplete = shot.incomplete,
-                )
-            },
+            ),
         )
     }
 }

@@ -18,6 +18,15 @@ class GaggiMateEndpointTest {
 
         assertEquals("wss://gaggimate.local:8443/ws", endpoint.webSocketUrl)
         assertEquals("https://gaggimate.local:8443/api/history/recent.bin", endpoint.historyUrl)
+        assertEquals(
+            "https://gaggimate.local:8443/api/history/000031.slog",
+            endpoint.shotLogUrl("31"),
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `shot log endpoint rejects non numeric ids`() {
+        GaggiMateEndpoint.parse("gaggimate.local").shotLogUrl("../index")
     }
 
     @Test(expected = IllegalArgumentException::class)

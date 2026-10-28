@@ -12,6 +12,12 @@ data class GaggiMateEndpoint private constructor(
     val historyUrl: String
         get() = "${if (secure) "https" else "http"}://$authority/api/history/recent.bin"
 
+    fun shotLogUrl(sourceId: String): String {
+        val id = sourceId.toLongOrNull()
+        require(id != null && id in 0..999_999) { "Invalid GaggiMate shot id." }
+        return "${if (secure) "https" else "http"}://$authority/api/history/${id.toString().padStart(6, '0')}.slog"
+    }
+
     companion object {
         fun parse(address: String): GaggiMateEndpoint {
             val input = address.trim()

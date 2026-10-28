@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import com.beanpilot.data.local.AppDatabase
 import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_1_2
+import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_2_3
+import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_3_4
 import com.beanpilot.data.local.dao.CoffeeBeanDao
 import com.beanpilot.data.local.dao.ShotDao
 import dagger.Module
@@ -18,15 +20,18 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.ExperimentalSerializationApi
 
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
     @Provides
     @Singleton
+    @OptIn(ExperimentalSerializationApi::class)
     fun provideJson(): Json = Json {
         ignoreUnknownKeys = true
         isLenient = true
+        explicitNulls = false
     }
 
     @Provides
@@ -43,6 +48,8 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "beanpilot-db")
             .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_2_3)
+            .addMigrations(MIGRATION_3_4)
             .build()
 
     @Provides
