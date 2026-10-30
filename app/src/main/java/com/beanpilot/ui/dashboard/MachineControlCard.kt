@@ -39,6 +39,7 @@ fun MachineControlCard(
     onStartFlush: () -> Unit,
     onStopFlush: () -> Unit,
     onStopFlushManually: () -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (state.pendingWarnings.isNotEmpty()) {
@@ -65,20 +66,45 @@ fun MachineControlCard(
 
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(if (compact) 12.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp),
         ) {
-            Text("Machine controls", style = MaterialTheme.typography.titleLarge)
-            Text("Selected profile: ${activeProfile ?: "Not available"}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onOpenProfiles, enabled = connected) {
-                    Text("Profiles")
+            Text(
+                if (compact) "CONTROLS" else "Machine controls",
+                style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                "Profile: ${activeProfile ?: "Not available"}",
+                style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            )
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TextButton(
+                        onClick = onOpenProfiles,
+                        enabled = connected,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Profiles")
+                    }
+                    Button(
+                        onClick = onStartBrew,
+                        enabled = connected && state.pendingWarnings.isEmpty() && !state.brewStarting,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (state.brewStarting) "Starting…" else "Start process")
+                    }
                 }
-                Button(
-                    onClick = onStartBrew,
-                    enabled = connected && state.pendingWarnings.isEmpty() && !state.brewStarting,
-                ) {
-                    Text(if (state.brewStarting) "Starting…" else "Start process")
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onOpenProfiles, enabled = connected) {
+                        Text("Profiles")
+                    }
+                    Button(
+                        onClick = onStartBrew,
+                        enabled = connected && state.pendingWarnings.isEmpty() && !state.brewStarting,
+                    ) {
+                        Text(if (state.brewStarting) "Starting…" else "Start process")
+                    }
                 }
             }
             Surface(
@@ -119,25 +145,51 @@ fun MachineControlCard(
             ) {
                 Text(
                     "Hold to flush · release sends stop",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(
+                        horizontal = if (compact) 10.dp else 16.dp,
+                        vertical = if (compact) 10.dp else 14.dp,
+                    ),
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onStartFlush, enabled = connected) {
-                    Text("Start flush")
+            if (compact) {
+                Column {
+                    TextButton(onClick = onStartFlush, enabled = connected, modifier = Modifier.fillMaxWidth()) {
+                        Text("Start flush")
+                    }
+                    TextButton(
+                        onClick = onStopFlushManually,
+                        enabled = connected,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Stop flush")
+                    }
                 }
-                TextButton(onClick = onStopFlushManually, enabled = connected) {
-                    Text("Stop flush")
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onStartFlush, enabled = connected) {
+                        Text("Start flush")
+                    }
+                    TextButton(onClick = onStopFlushManually, enabled = connected) {
+                        Text("Stop flush")
+                    }
                 }
             }
             if (!connected) {
                 Text("Connect to GaggiMate to enable machine controls.")
             }
-            Text(
-                "Flush release behavior depends on the machine’s configured flush duration. Brew stop is not exposed as a documented remote command; use the machine’s normal stop control.",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (!compact) {
+                Text(
+                    "Flush release behavior depends on the machine’s configured flush duration. Brew stop is not exposed as a documented remote command; use the machine’s normal stop control.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text(
+                    "Stop brew at the machine; flush release uses its configured duration.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             state.message?.let { message ->
                 Text(
                     message,

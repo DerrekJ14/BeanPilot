@@ -17,8 +17,9 @@ This repository now includes the initial project skeleton for the requested Andr
 - A local coffee library linked to shot reviews
 - GaggiMate profile browsing, selection, editing, and JSON import
 - Remote process start and hold-to-flush controls
-- Selectable Brew Station, Classic, and Compact dashboard layouts
-- Dashboard controls for configuring, connecting, and disconnecting from the machine
+- A connection-first screen that collapses to a machine status bar after connecting
+- Customizable widget dashboards with reorder, visibility, and compact/full-width controls
+- Up to three named dashboard layouts saved locally
 
 ## Required setup
 
@@ -34,7 +35,7 @@ This repository now includes the initial project skeleton for the requested Andr
 
 ## Notes
 
-BeanPilot uses the [GaggiMate WebSocket API](https://github.com/jniebuhr/gaggimate/blob/master/docs/websocket-api.yaml) and [shot history API](https://github.com/jniebuhr/gaggimate/blob/master/docs/shot-notes-api.md). Machine addresses are saved locally and reconnect automatically the next time the app opens.
+BeanPilot uses the [GaggiMate WebSocket API](https://github.com/jniebuhr/gaggimate/blob/master/docs/websocket-api.yaml) and [shot history API](https://github.com/jniebuhr/gaggimate/blob/master/docs/shot-notes-api.md). Machine addresses are saved locally and reconnect automatically the next time the app opens. When disconnected, BeanPilot opens on its machine connection screen; after connecting, the connection form collapses into a compact status bar that can be expanded from the dashboard.
 
 The documented status events provide temperature, pressure, flow, machine state, and profile. They do not currently define a live scale-weight field, so the dashboard displays a dash until a supported field is available. Imported shot index entries include duration, output volume when recorded, rating, and profile; dose-in, grinder setting, and notes are not provided by the index and remain unset until entered in a shot review.
 
@@ -46,6 +47,6 @@ Open **Profiles** to list profiles stored on GaggiMate, select one, load it into
 
 **Start process** sends GaggiMate's documented current-mode activation command. If the machine requests warning confirmation, BeanPilot displays the warnings and requires an explicit confirmation. The API does not document a separate remote brew-stop command, so stop a running brew using the machine's normal stop control. **Press and hold to flush** sends the documented flush start/stop requests; stop-on-release behavior depends on the flush duration configured on GaggiMate. Separate Start flush and Stop flush buttons are available as well.
 
-Use **Layout** to switch between **Brew Station** (controls first), **Classic** (connection and telemetry first), and **Compact** (smaller metrics and grouped controls). The selected layout is saved on the device; Brew Station is the initial default.
+Use **Edit** on the connected dashboard to reorder widgets, show or hide them, and switch the machine status or Brew Coach card between half-width and full-width. **Layouts** lets you save the current configuration under a custom name, switch between layouts, or remove a saved layout. The app allows up to three custom layouts in addition to the default Brew Station layout. Widget layouts are stored on the device.
 
 The connection, shot-index import, individual shot review, notes sync, profile-list retrieval, and profile loading have been verified against the physical GaggiMate device. Brew and flush actuation were not triggered during testing. Shot-log parsing, notes merging, and profile validation have unit coverage.

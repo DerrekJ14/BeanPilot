@@ -28,11 +28,29 @@ class MachinePreferences @Inject constructor(
         preferences.edit().putString(DASHBOARD_LAYOUT_KEY, layout).apply()
     }
 
+    fun getSavedDashboardLayouts(): String? =
+        preferences.getString(SAVED_DASHBOARD_LAYOUTS_KEY, null)
+
+    fun saveSavedDashboardLayouts(layouts: String) {
+        preferences.edit().putString(SAVED_DASHBOARD_LAYOUTS_KEY, layouts).apply()
+    }
+
+    fun getSelectedCustomDashboardLayout(): String =
+        preferences.getString(SELECTED_CUSTOM_DASHBOARD_LAYOUT_KEY, DEFAULT_CUSTOM_LAYOUT_ID)
+            .orEmpty()
+
+    fun saveSelectedCustomDashboardLayout(id: String) {
+        preferences.edit().putString(SELECTED_CUSTOM_DASHBOARD_LAYOUT_KEY, id).apply()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "beanpilot_preferences"
         const val MACHINE_ADDRESS_KEY = "gaggimate_address"
         const val DASHBOARD_LAYOUT_KEY = "dashboard_layout"
+        const val SAVED_DASHBOARD_LAYOUTS_KEY = "saved_dashboard_layouts"
+        const val SELECTED_CUSTOM_DASHBOARD_LAYOUT_KEY = "selected_custom_dashboard_layout"
         const val DEFAULT_DASHBOARD_LAYOUT = "brew_station"
+        const val DEFAULT_CUSTOM_LAYOUT_ID = "default"
         val DASHBOARD_LAYOUTS = setOf("brew_station", "classic", "compact")
     }
 }

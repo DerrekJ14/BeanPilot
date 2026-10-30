@@ -20,19 +20,28 @@ private val LightColors = lightColorScheme(
 
 private val DarkColors = darkColorScheme(
     primary = EspressoGold,
-    secondary = EspressoBrown,
+    secondary = MachineBlue,
     tertiary = MachineBlue,
     background = EspressoDark,
-    surface = EspressoBrown,
+    surface = Color(0xFF12161B),
+    surfaceVariant = Color(0xFF1B2229),
+    surfaceContainerLowest = Color(0xFF0D1014),
+    surfaceContainerLow = Color(0xFF12161B),
+    surfaceContainer = Color(0xFF171C22),
+    surfaceContainerHigh = Color(0xFF20272F),
+    surfaceContainerHighest = Color(0xFF29323B),
     onPrimary = EspressoDark,
     onSecondary = FoamCream,
     onBackground = FoamCream,
     onSurface = FoamCream,
+    onSurfaceVariant = Color(0xFFABB6C2),
+    outline = Color(0xFF46515D),
+    error = Color(0xFFFF6B6B),
 )
 
 @Composable
 fun BeanPilotTheme(
-    darkTheme: Boolean = false,
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colors = if (darkTheme) DarkColors else LightColors

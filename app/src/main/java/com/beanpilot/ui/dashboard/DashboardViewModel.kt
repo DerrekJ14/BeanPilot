@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -83,11 +85,35 @@ class DashboardViewModel @Inject constructor(
     private val selectedLayout = MutableStateFlow(
         DashboardLayout.fromPreference(machinePreferences.getDashboardLayout()),
     )
+    private val savedWidgetLayouts = MutableStateFlow(loadSavedWidgetLayouts())
+    private val selectedWidgetLayoutId = MutableStateFlow(
+        machinePreferences.getSelectedCustomDashboardLayout().takeIf { id ->
+            savedWidgetLayouts.value.any { it.id == id }
+        } ?: "default",
+    )
+    private val widgetLayoutMessage = MutableStateFlow<String?>(null)
     private var flushStartJob: Job? = null
     private var flushStopInProgress = false
 
-    private val controlsAndLayout = combine(profileState, selectedLayout) { profiles, layout ->
-        profiles.copy(layout = layout)
+    private val widgetLayoutState = combine(
+        savedWidgetLayouts,
+        selectedWidgetLayoutId,
+        widgetLayoutMessage,
+    ) { layouts, selectedId, message ->
+        Triple(layouts, selectedId, message)
+    }
+
+    private val controlsAndLayout = combine(profileState, selectedLayout, widgetLayoutState) {
+            profiles,
+            layout,
+            widgetLayouts,
+        ->
+        profiles.copy(
+            layout = layout,
+            savedWidgetLayouts = widgetLayouts.first,
+            selectedWidgetLayoutId = widgetLayouts.second,
+            widgetLayoutMessage = widgetLayouts.third,
+        )
     }
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -149,6 +175,117 @@ class DashboardViewModel @Inject constructor(
     fun setDashboardLayout(layout: DashboardLayout) {
         machinePreferences.saveDashboardLayout(layout.preferenceValue)
         selectedLayout.value = layout
+    }
+
+    fun selectWidgetLayout(id: String) {
+        if (savedWidgetLayouts.value.none { it.id == id }) {
+            widgetLayoutMessage.value = "That saved layout is no longer available."
+            return
+        }
+        selectedWidgetLayoutId.value = id
+        machinePreferences.saveSelectedCustomDashboardLayout(id)
+        widgetLayoutMessage.value = null
+    }
+
+    fun updateWidgetLayout(layout: SavedDashboardLayout) {
+        val normalized = layout.normalized()
+        val updated = savedWidgetLayouts.value.map { current ->
+            if (current.id == normalized.id) normalized else current
+        }
+        if (updated.none { it.id == normalized.id }) return
+        persistWidgetLayouts(updated)
+    }
+
+    fun saveWidgetLayoutAs(name: String): String? {
+        val normalizedName = name.trim().take(SavedDashboardLayout.MAX_LAYOUT_NAME_LENGTH)
+        if (normalizedName.isBlank()) return "Enter a name for this layout."
+        val userLayouts = savedWidgetLayouts.value.filterNot { it.id == DEFAULT_WIDGET_LAYOUT_ID }
+        if (userLayouts.size >= SavedDashboardLayout.MAX_SAVED_LAYOUTS) {
+            return "You can save up to ${SavedDashboardLayout.MAX_SAVED_LAYOUTS} custom layouts."
+        }
+        if (savedWidgetLayouts.value.any { it.name.equals(normalizedName, ignoreCase = true) }) {
+            return "A layout with that name already exists."
+        }
+        val current = currentWidgetLayout()
+        val newLayout = current.copy(
+            id = "custom-${System.currentTimeMillis()}",
+            name = normalizedName,
+        )
+        persistWidgetLayouts(savedWidgetLayouts.value + newLayout)
+        selectedWidgetLayoutId.value = newLayout.id
+        machinePreferences.saveSelectedCustomDashboardLayout(newLayout.id)
+        return null
+    }
+
+    fun deleteWidgetLayout(id: String) {
+        if (id == DEFAULT_WIDGET_LAYOUT_ID) return
+        val updated = savedWidgetLayouts.value.filterNot { it.id == id }
+        if (updated.size == savedWidgetLayouts.value.size) return
+        persistWidgetLayouts(updated)
+        if (selectedWidgetLayoutId.value == id) {
+            selectWidgetLayout(DEFAULT_WIDGET_LAYOUT_ID)
+        }
+    }
+
+    fun moveWidget(widget: DashboardWidget, offset: Int) {
+        val current = currentWidgetLayout()
+        val fromIndex = current.widgets.indexOf(widget)
+        val toIndex = (fromIndex + offset).coerceIn(0, current.widgets.lastIndex)
+        if (fromIndex < 0 || fromIndex == toIndex) return
+        val reordered = current.widgets.toMutableList().apply {
+            add(toIndex, removeAt(fromIndex))
+        }
+        updateWidgetLayout(current.copy(widgets = reordered))
+    }
+
+    fun setWidgetVisible(widget: DashboardWidget, visible: Boolean) {
+        val current = currentWidgetLayout()
+        val hidden = current.hiddenWidgets.toMutableSet().apply {
+            if (visible) remove(widget) else add(widget)
+        }
+        updateWidgetLayout(current.copy(hiddenWidgets = hidden))
+    }
+
+    fun setWidgetSize(widget: DashboardWidget, size: DashboardWidgetSize) {
+        val current = currentWidgetLayout()
+        updateWidgetLayout(current.copy(sizes = current.sizes + (widget to size)))
+    }
+
+    private fun currentWidgetLayout(): SavedDashboardLayout =
+        savedWidgetLayouts.value.firstOrNull { it.id == selectedWidgetLayoutId.value }
+            ?: savedWidgetLayouts.value.first()
+
+    private fun persistWidgetLayouts(layouts: List<SavedDashboardLayout>) {
+        val default = layouts.firstOrNull { it.id == DEFAULT_WIDGET_LAYOUT_ID }
+            ?: SavedDashboardLayout.default()
+        val custom = layouts
+            .filterNot { it.id == DEFAULT_WIDGET_LAYOUT_ID }
+            .take(SavedDashboardLayout.MAX_SAVED_LAYOUTS)
+        val validLayouts = listOf(default.normalized()) + custom.map { it.normalized() }
+        savedWidgetLayouts.value = validLayouts
+        machinePreferences.saveSavedDashboardLayouts(json.encodeToString(validLayouts))
+    }
+
+    private fun loadSavedWidgetLayouts(): List<SavedDashboardLayout> {
+        val stored = machinePreferences.getSavedDashboardLayouts()
+            ?: return listOf(SavedDashboardLayout.default())
+        return try {
+            val decoded = json.decodeFromString<List<SavedDashboardLayout>>(stored)
+            val default = decoded.firstOrNull { it.id == DEFAULT_WIDGET_LAYOUT_ID }
+                ?: SavedDashboardLayout.default()
+            val custom = decoded
+                .filterNot { it.id == DEFAULT_WIDGET_LAYOUT_ID }
+                .distinctBy { it.id }
+                .take(SavedDashboardLayout.MAX_SAVED_LAYOUTS)
+            (listOf(default.normalized()) + custom.map { it.normalized() })
+                .also { machinePreferences.saveSavedDashboardLayouts(json.encodeToString(it)) }
+        } catch (exception: SerializationException) {
+            Log.e(TAG, "Could not read saved dashboard layouts", exception)
+            listOf(SavedDashboardLayout.default())
+        } catch (exception: IllegalArgumentException) {
+            Log.e(TAG, "Saved dashboard layouts contain invalid values", exception)
+            listOf(SavedDashboardLayout.default())
+        }
     }
 
     fun loadProfiles() {
@@ -566,6 +703,7 @@ class DashboardViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "BeanPilotDashboard"
+        const val DEFAULT_WIDGET_LAYOUT_ID = "default"
     }
 }
 
@@ -593,6 +731,9 @@ data class ProfileUiState(
     val brewStarting: Boolean = false,
     val flushHeld: Boolean = false,
     val flushActive: Boolean = false,
+    val savedWidgetLayouts: List<SavedDashboardLayout> = listOf(SavedDashboardLayout.default()),
+    val selectedWidgetLayoutId: String = "default",
+    val widgetLayoutMessage: String? = null,
 )
 
 data class ShotDetailUiState(

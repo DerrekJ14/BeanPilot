@@ -9,19 +9,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Coffee
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -34,6 +54,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -41,12 +63,18 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beanpilot.data.remote.MachineConnectionStatus
+import com.beanpilot.domain.recommendation.BrewCoach
+import com.beanpilot.domain.recommendation.BrewRecommendation
 import com.beanpilot.domain.model.ShotRecord
 import com.beanpilot.domain.model.CoffeeBean
+import com.beanpilot.domain.model.TelemetrySnapshot
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,9 +89,34 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
     var showCoffeeLibrary by rememberSaveable { mutableStateOf(false) }
     var showProfileManager by rememberSaveable { mutableStateOf(false) }
     var showDashboardSettings by rememberSaveable { mutableStateOf(false) }
+    var widgetEditMode by rememberSaveable { mutableStateOf(false) }
+    var connectionExpanded by rememberSaveable {
+        mutableStateOf(uiState.connection.status != MachineConnectionStatus.Connected)
+    }
+    val liveTelemetry = remember { mutableStateListOf<TelemetrySnapshot>() }
+    val recommendation = remember(uiState.recentShots) {
+        BrewCoach.recommend(uiState.recentShots)
+    }
+
+    LaunchedEffect(uiState.telemetry.timestamp) {
+        val snapshot = uiState.telemetry
+        if (snapshot.timestamp != null && liveTelemetry.lastOrNull()?.timestamp != snapshot.timestamp) {
+            liveTelemetry.add(snapshot)
+            if (liveTelemetry.size > MAX_LIVE_TELEMETRY_SAMPLES) {
+                liveTelemetry.removeAt(0)
+            }
+        }
+    }
 
     LaunchedEffect(showProfileManager) {
         if (showProfileManager) viewModel.loadProfiles()
+    }
+    LaunchedEffect(uiState.connection.status) {
+        if (uiState.connection.status == MachineConnectionStatus.Connected) {
+            connectionExpanded = false
+        } else {
+            connectionExpanded = true
+        }
     }
 
     Scaffold(
@@ -74,9 +127,10 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                         when {
                             showCoffeeLibrary -> "Coffee Library"
                             showProfileManager -> "GaggiMate Profiles"
-                            showDashboardSettings -> "Dashboard Layout"
-                            else -> "BeanPilot Dashboard"
+                            showDashboardSettings -> "Saved Dashboards"
+                            else -> "BEANPILOT"
                         },
+                        fontWeight = FontWeight.SemiBold,
                     )
                 },
             )
@@ -93,12 +147,13 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 modifier = Modifier.padding(paddingValues),
             )
         } else if (showDashboardSettings) {
-            DashboardSettingsScreen(
-                selectedLayout = uiState.profileUiState.layout,
-                onSelectLayout = {
-                    viewModel.setDashboardLayout(it)
-                    showDashboardSettings = false
-                },
+            SavedDashboardLayoutsScreen(
+                layouts = uiState.profileUiState.savedWidgetLayouts,
+                selectedLayoutId = uiState.profileUiState.selectedWidgetLayoutId,
+                message = uiState.profileUiState.widgetLayoutMessage,
+                onSelect = viewModel::selectWidgetLayout,
+                onSaveAs = viewModel::saveWidgetLayoutAs,
+                onDelete = viewModel::deleteWidgetLayout,
                 onBack = { showDashboardSettings = false },
                 modifier = Modifier.padding(paddingValues),
             )
@@ -133,168 +188,143 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 onBack = { selectedShotId = null },
                 onSave = viewModel::saveShotReview,
                 modifier = Modifier.padding(paddingValues),
-            )
-        } else {
-            LazyColumn(
+        )
+    } else {
+        if (uiState.connection.status != MachineConnectionStatus.Connected) {
+            ConnectionLoginScreen(
+                address = address,
+                onAddressChange = { address = it },
+                onConnect = { viewModel.connectToMachine(address) },
+                onDisconnect = viewModel::disconnectFromMachine,
+                uiState = uiState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(paddingValues),
+            )
+        } else {
+            val activeLayout = uiState.profileUiState.savedWidgetLayouts
+                .firstOrNull { it.id == uiState.profileUiState.selectedWidgetLayoutId }
+                ?: SavedDashboardLayout.default()
+            val widgets = activeLayout.widgets.filterNot { it in activeLayout.hiddenWidgets }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TextButton(onClick = { showCoffeeLibrary = true }, modifier = Modifier.weight(1f)) {
-                        Text("Coffee (${uiState.coffeeBeans.size})")
-                    }
-                    TextButton(
-                        onClick = { showProfileManager = true },
-                        modifier = Modifier.weight(1f),
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ConnectionStatusBar(
+                        uiState = uiState,
+                        expanded = connectionExpanded,
+                        onExpand = { connectionExpanded = !connectionExpanded },
+                        onAddressChange = { address = it },
+                        address = address,
+                        onConnect = { viewModel.connectToMachine(address) },
+                        onDisconnect = viewModel::disconnectFromMachine,
+                        onSyncHistory = viewModel::syncShotHistory,
+                    )
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Profiles")
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = { showProfileManager = true },
+                                modifier = Modifier.semantics { contentDescription = "Profiles" },
+                            ) {
+                                Icon(Icons.Filled.Settings, contentDescription = null)
+                            }
+                            IconButton(
+                                onClick = { showCoffeeLibrary = true },
+                                modifier = Modifier.semantics { contentDescription = "Coffee library" },
+                            ) {
+                                Icon(Icons.Filled.Coffee, contentDescription = null)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = { widgetEditMode = !widgetEditMode },
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (widgetEditMode) "Done editing widgets" else "Edit widgets"
+                                },
+                            ) {
+                                Icon(
+                                    if (widgetEditMode) Icons.Filled.Done else Icons.Filled.Edit,
+                                    contentDescription = null,
+                                )
+                            }
+                            IconButton(
+                                onClick = { showDashboardSettings = true },
+                                modifier = Modifier.semantics { contentDescription = "Saved layouts" },
+                            ) {
+                                Icon(Icons.Filled.Dashboard, contentDescription = null)
+                            }
+                        }
                     }
-                    TextButton(onClick = { showDashboardSettings = true }) {
-                        Text("Layout")
+                }
+                if (widgetEditMode) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        WidgetEditorPanel(
+                            layout = activeLayout,
+                            onMove = viewModel::moveWidget,
+                            onVisibilityChange = viewModel::setWidgetVisible,
+                            onSizeChange = viewModel::setWidgetSize,
+                        )
                     }
                 }
-            }
-            if (uiState.profileUiState.layout == DashboardLayout.BrewStation) {
-                item {
-                    MachineControlCard(
-                        connected = uiState.connection.status == MachineConnectionStatus.Connected,
-                        activeProfile = uiState.telemetry.activeProfile,
-                        state = uiState.profileUiState,
-                        onOpenProfiles = { showProfileManager = true },
-                        onStartBrew = viewModel::startBrew,
-                        onConfirmBrew = viewModel::confirmBrewStart,
-                        onCancelBrew = viewModel::cancelBrewStart,
-                        onStartFlush = viewModel::startFlush,
-                        onStopFlush = viewModel::stopFlush,
-                        onStopFlushManually = viewModel::stopFlushManually,
-                    )
+                if (widgets.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text("No widgets are visible. Use Edit to add widgets to this layout.")
+                    }
                 }
-            }
-            if (uiState.profileUiState.layout != DashboardLayout.BrewStation) {
-                item {
-                    ConnectionCard(
-                        address = address,
-                        onAddressChange = { address = it },
-                        onConnect = { viewModel.connectToMachine(address) },
-                        onDisconnect = viewModel::disconnectFromMachine,
-                        onSyncHistory = viewModel::syncShotHistory,
-                        uiState = uiState,
-                    )
-                }
-            }
-            if (uiState.profileUiState.layout == DashboardLayout.Classic) {
-                item {
-                    MachineStatusCard(uiState)
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    MetricCard(
-                        title = "Temperature",
-                        value = uiState.telemetry.temperatureC?.let { "${it.oneDecimal()}°C" } ?: "—",
-                        modifier = Modifier.weight(1f),
-                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
-                    )
-                    MetricCard(
-                        title = "Pressure",
-                        value = uiState.telemetry.pressureBar?.let { "${it.oneDecimal()} bar" } ?: "—",
-                        modifier = Modifier.weight(1f),
-                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
-                    )
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    MetricCard(
-                        title = "Flow",
-                        value = uiState.telemetry.flowMlPerMin?.let { "${it.oneDecimal()} ml/min" } ?: "—",
-                        modifier = Modifier.weight(1f),
-                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
-                    )
-                    MetricCard(
-                        title = "Scale weight",
-                        value = uiState.telemetry.weightGr?.let { "${it.oneDecimal()} g" } ?: "—",
-                        modifier = Modifier.weight(1f),
-                        compact = uiState.profileUiState.layout == DashboardLayout.Compact,
-                    )
-                }
-            }
-
-            if (uiState.profileUiState.layout != DashboardLayout.Classic) {
-                item {
-                    MachineStatusCard(uiState)
-                }
-            }
-
-            if (uiState.profileUiState.layout == DashboardLayout.Classic ||
-                uiState.profileUiState.layout == DashboardLayout.Compact
-            ) {
-                item {
-                    MachineControlCard(
-                        connected = uiState.connection.status == MachineConnectionStatus.Connected,
-                        activeProfile = uiState.telemetry.activeProfile,
-                        state = uiState.profileUiState,
-                        onOpenProfiles = { showProfileManager = true },
-                        onStartBrew = viewModel::startBrew,
-                        onConfirmBrew = viewModel::confirmBrewStart,
-                        onCancelBrew = viewModel::cancelBrewStart,
-                        onStartFlush = viewModel::startFlush,
-                        onStopFlush = viewModel::stopFlush,
-                        onStopFlushManually = viewModel::stopFlushManually,
-                    )
-                }
-            }
-            if (uiState.profileUiState.layout == DashboardLayout.BrewStation) {
-                item {
-                    ConnectionCard(
-                        address = address,
-                        onAddressChange = { address = it },
-                        onConnect = { viewModel.connectToMachine(address) },
-                        onDisconnect = viewModel::disconnectFromMachine,
-                        onSyncHistory = viewModel::syncShotHistory,
-                        uiState = uiState,
-                    )
-                }
-            }
-
-            item {
-                Text(
-                    text = "Recent shots",
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
-
-            if (uiState.recentShots.isEmpty()) {
-                item {
-                    Text(
-                        text = "Connect to GaggiMate to import shot history.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            } else {
-                items(uiState.recentShots, key = { it.id }) { shot ->
-                    ShotSummaryCard(
-                        shot = shot,
-                        onClick = {
-                            selectedShotId = shot.id
-                            viewModel.loadShotDetails(shot)
-                        },
-                    )
+                items(
+                    items = widgets,
+                    key = { it.name },
+                    span = { widget ->
+                        val fullWidth = activeLayout.sizes[widget] != DashboardWidgetSize.Compact
+                        GridItemSpan(if (fullWidth) maxLineSpan else 1)
+                    },
+                ) { widget ->
+                    when (widget) {
+                        DashboardWidget.MachineStatus -> MachineStatusCard(
+                            uiState,
+                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
+                        )
+                        DashboardWidget.MachineControls -> MachineControlCard(
+                            connected = true,
+                            activeProfile = uiState.telemetry.activeProfile,
+                            state = uiState.profileUiState,
+                            onOpenProfiles = { showProfileManager = true },
+                            onStartBrew = viewModel::startBrew,
+                            onConfirmBrew = viewModel::confirmBrewStart,
+                            onCancelBrew = viewModel::cancelBrewStart,
+                            onStartFlush = viewModel::startFlush,
+                            onStopFlush = viewModel::stopFlush,
+                            onStopFlushManually = viewModel::stopFlushManually,
+                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
+                        )
+                        DashboardWidget.LiveTelemetry -> LiveTelemetryChart(
+                            points = liveTelemetry,
+                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
+                        )
+                        DashboardWidget.BrewCoach -> BrewCoachCard(
+                            recommendation,
+                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
+                        )
+                        DashboardWidget.ShotHistory -> ShotHistoryWidget(
+                            shots = uiState.recentShots,
+                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
+                            onSelect = { shot ->
+                                selectedShotId = shot.id
+                                viewModel.loadShotDetails(shot)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -303,27 +333,365 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
 }
 
 @Composable
-private fun MachineStatusCard(uiState: DashboardUiState) {
+private fun MachineStatusCard(uiState: DashboardUiState, compact: Boolean = false) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(if (compact) 12.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
         ) {
-            Text("Machine status", style = MaterialTheme.typography.titleLarge)
             Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Icons.Filled.Thermostat, contentDescription = null)
+                Text("MACHINE", style = MaterialTheme.typography.labelLarge)
+                val connected = uiState.connection.status == MachineConnectionStatus.Connected
                 Text(
-                    uiState.telemetry.machineState ?: "Waiting for telemetry",
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = when (uiState.connection.status) {
+                        MachineConnectionStatus.Disconnected -> "OFFLINE"
+                        MachineConnectionStatus.Connecting -> "CONNECTING"
+                        MachineConnectionStatus.Connected -> "ONLINE"
+                        MachineConnectionStatus.Reconnecting -> "RECONNECTING"
+                    },
+                    color = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
-            Text("Profile: ${uiState.telemetry.activeProfile ?: "—"}")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Thermostat, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                Text(
+                    text = uiState.telemetry.machineState ?: "Waiting for machine telemetry",
+                    style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+                )
+            }
+            Text(
+                "PROFILE  ${uiState.telemetry.activeProfile ?: "—"}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
+
+@Composable
+private fun BrewCoachCard(recommendation: BrewRecommendation, compact: Boolean = false) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(if (compact) 12.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("BREW COACH", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    recommendation.confidence,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            Text(
+                recommendation.title,
+                style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                recommendation.detail,
+                style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            )
+            if (!compact) {
+                Text(
+                    recommendation.basis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionLoginScreen(
+    address: String,
+    onAddressChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    uiState: DashboardUiState,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("CONNECT MACHINE", style = MaterialTheme.typography.labelLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("BeanPilot", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "Connect to your GaggiMate machine by entering its host or IP address.",
+            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ConnectionCard(
+            address = address,
+            onAddressChange = onAddressChange,
+            onConnect = onConnect,
+            onDisconnect = onDisconnect,
+            onSyncHistory = {},
+            uiState = uiState,
+        )
+        Text(
+            "Your machine address is stored on this device.",
+            modifier = Modifier.padding(top = 12.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ConnectionStatusBar(
+    uiState: DashboardUiState,
+    expanded: Boolean,
+    onExpand: () -> Unit,
+    address: String,
+    onAddressChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onSyncHistory: () -> Unit,
+) {
+    if (expanded) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("MACHINE CONNECTION", style = MaterialTheme.typography.labelLarge)
+                    IconButton(
+                        onClick = onExpand,
+                        modifier = Modifier.semantics { contentDescription = "Minimize connection settings" },
+                    ) {
+                        Icon(Icons.Filled.ExpandLess, contentDescription = null)
+                    }
+                }
+            }
+            ConnectionCard(
+                address = address,
+                onAddressChange = onAddressChange,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect,
+                onSyncHistory = onSyncHistory,
+                uiState = uiState,
+            )
+        }
+    } else {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("MACHINE ONLINE", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        uiState.connection.address,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onSyncHistory,
+                        modifier = Modifier.semantics { contentDescription = "Sync shot history" },
+                    ) {
+                        Icon(Icons.Filled.Sync, contentDescription = null)
+                    }
+                    IconButton(
+                        onClick = onExpand,
+                        modifier = Modifier.semantics { contentDescription = "Connection settings" },
+                    ) {
+                        Icon(Icons.Filled.ExpandMore, contentDescription = null)
+                    }
+                    IconButton(
+                        onClick = onDisconnect,
+                        modifier = Modifier.semantics { contentDescription = "Disconnect machine" },
+                    ) {
+                        Icon(Icons.Filled.LinkOff, contentDescription = null)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetEditorPanel(
+    layout: SavedDashboardLayout,
+    onMove: (DashboardWidget, Int) -> Unit,
+    onVisibilityChange: (DashboardWidget, Boolean) -> Unit,
+    onSizeChange: (DashboardWidget, DashboardWidgetSize) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("CUSTOMIZE WIDGETS", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "Use the arrows to reorder. Hide widgets you do not need; compact widgets use half-width cards.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            layout.widgets.forEachIndexed { index, widget ->
+                HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(widget.title(), style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row {
+                            IconButton(
+                                onClick = { onMove(widget, -1) },
+                                enabled = index > 0,
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Move ${widget.title()} up"
+                                },
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null)
+                            }
+                            IconButton(
+                                onClick = { onMove(widget, 1) },
+                                enabled = index < layout.widgets.lastIndex,
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Move ${widget.title()} down"
+                                },
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
+                            }
+                            IconButton(
+                                onClick = { onVisibilityChange(widget, widget in layout.hiddenWidgets) },
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (widget in layout.hiddenWidgets) {
+                                        "Show ${widget.title()}"
+                                    } else {
+                                        "Hide ${widget.title()}"
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    if (widget in layout.hiddenWidgets) {
+                                        Icons.Filled.Visibility
+                                    } else {
+                                        Icons.Filled.VisibilityOff
+                                    },
+                                    contentDescription = null,
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                val next = if (layout.sizes[widget] == DashboardWidgetSize.Compact) {
+                                    DashboardWidgetSize.Full
+                                } else {
+                                    DashboardWidgetSize.Compact
+                                }
+                                onSizeChange(widget, next)
+                            },
+                            modifier = Modifier.semantics {
+                                contentDescription = if (layout.sizes[widget] == DashboardWidgetSize.Compact) {
+                                    "Make ${widget.title()} full width"
+                                } else {
+                                    "Make ${widget.title()} half width"
+                                }
+                            },
+                        ) {
+                            Icon(
+                                if (layout.sizes[widget] == DashboardWidgetSize.Compact) {
+                                    Icons.Filled.UnfoldMore
+                                } else {
+                                    Icons.Filled.UnfoldLess
+                                },
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShotHistoryWidget(
+    shots: List<ShotRecord>,
+    compact: Boolean,
+    onSelect: (ShotRecord) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(if (compact) 10.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
+        ) {
+            Text(
+                "SHOT HISTORY",
+                style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium,
+            )
+            if (shots.isEmpty()) {
+                Text(
+                    "Sync machine history to see extractions here.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                shots.take(if (compact) 2 else 4).forEach { shot ->
+                    HorizontalDivider()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .then(
+                                Modifier.clickable { onSelect(shot) },
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            "${shot.doseOutGr?.let { "${it.oneDecimal()} g" } ?: "Yield —"} · " +
+                                "${(shot.brewTimeMs / 1_000.0).oneDecimal()} s",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        if (!compact) {
+                            Text(
+                                "${shot.profileUsed.ifBlank { "Unknown profile" }} · " +
+                                    (shot.rating?.let { "Rating $it/5" } ?: "Not rated"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun DashboardWidget.title(): String =
+    when (this) {
+        DashboardWidget.MachineStatus -> "Machine status"
+        DashboardWidget.MachineControls -> "Brew controls"
+        DashboardWidget.LiveTelemetry -> "Live telemetry"
+        DashboardWidget.BrewCoach -> "Brew Coach"
+        DashboardWidget.ShotHistory -> "Shot history"
+    }
 
 @Composable
 private fun ConnectionCard(
@@ -375,13 +743,30 @@ private fun ConnectionCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(onClick = onConnect) {
-                    Text("Connect")
+                Button(
+                    onClick = onConnect,
+                    enabled = uiState.connection.status != MachineConnectionStatus.Connecting,
+                ) {
+                    Text(
+                        if (uiState.connection.status == MachineConnectionStatus.Connecting) {
+                            "Connecting…"
+                        } else {
+                            "Connect"
+                        },
+                    )
                 }
-                TextButton(onClick = onDisconnect) {
-                    Text("Disconnect")
+                if (
+                    uiState.connection.status == MachineConnectionStatus.Connected ||
+                    uiState.connection.status == MachineConnectionStatus.Reconnecting
+                ) {
+                    TextButton(onClick = onDisconnect) {
+                        Text("Disconnect")
+                    }
                 }
-                TextButton(onClick = onSyncHistory) {
+                TextButton(
+                    onClick = onSyncHistory,
+                    enabled = uiState.connection.status == MachineConnectionStatus.Connected,
+                ) {
                     Text("Sync shots")
                 }
             }
@@ -1024,3 +1409,5 @@ private const val MAX_GAGGIMATE_NOTE_LENGTH = 200
 
 private fun Double.oneDecimal(): String =
     String.format(Locale.getDefault(), "%.1f", this)
+
+private const val MAX_LIVE_TELEMETRY_SAMPLES = 120
