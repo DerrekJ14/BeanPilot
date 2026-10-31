@@ -5,10 +5,22 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class DashboardWidget {
     MachineStatus,
+    @Deprecated("Retained to migrate layouts saved by older app versions.")
     MachineControls,
     LiveTelemetry,
     BrewCoach,
     ShotHistory,
+
+    ;
+
+    companion object {
+        val dashboardWidgets = listOf(
+            MachineStatus,
+            LiveTelemetry,
+            BrewCoach,
+            ShotHistory,
+        )
+    }
 }
 
 @Serializable
@@ -21,17 +33,22 @@ enum class DashboardWidgetSize {
 data class SavedDashboardLayout(
     val id: String,
     val name: String,
-    val widgets: List<DashboardWidget> = DashboardWidget.entries,
+    val widgets: List<DashboardWidget> = DashboardWidget.dashboardWidgets,
     val hiddenWidgets: Set<DashboardWidget> = emptySet(),
     val sizes: Map<DashboardWidget, DashboardWidgetSize> = emptyMap(),
 ) {
+    @Suppress("DEPRECATION")
     fun normalized(): SavedDashboardLayout {
-        val ordered = (widgets + DashboardWidget.entries).distinct()
+        val allowedWidgets = DashboardWidget.dashboardWidgets.toSet()
+        val ordered = (widgets.filterNot { it == DashboardWidget.MachineControls } +
+            DashboardWidget.dashboardWidgets)
+            .distinct()
+            .filter { it in allowedWidgets }
         return copy(
             name = name.trim().take(MAX_LAYOUT_NAME_LENGTH),
             widgets = ordered,
-            hiddenWidgets = hiddenWidgets.intersect(DashboardWidget.entries.toSet()),
-            sizes = sizes.filterKeys { it in DashboardWidget.entries },
+            hiddenWidgets = hiddenWidgets.intersect(allowedWidgets),
+            sizes = sizes.filterKeys { it in allowedWidgets },
         )
     }
 

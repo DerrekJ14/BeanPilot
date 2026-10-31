@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LinkOff
@@ -46,6 +47,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -81,21 +84,26 @@ import java.util.Locale
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("DEPRECATION")
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf(uiState.machineAddress) }
     var selectedShotId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showCoffeeLibrary by rememberSaveable { mutableStateOf(false) }
+    var showShotHistory by rememberSaveable { mutableStateOf(false) }
     var showProfileManager by rememberSaveable { mutableStateOf(false) }
     var showDashboardSettings by rememberSaveable { mutableStateOf(false) }
     var widgetEditMode by rememberSaveable { mutableStateOf(false) }
+    var selectedCoffeeBeanId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var coffeeSelectionInitialized by rememberSaveable { mutableStateOf(false) }
     var connectionExpanded by rememberSaveable {
         mutableStateOf(uiState.connection.status != MachineConnectionStatus.Connected)
     }
     val liveTelemetry = remember { mutableStateListOf<TelemetrySnapshot>() }
-    val recommendation = remember(uiState.recentShots) {
-        BrewCoach.recommend(uiState.recentShots)
+    val selectedCoffee = uiState.coffeeBeans.firstOrNull { it.id == selectedCoffeeBeanId }
+    val recommendation = remember(uiState.recentShots, selectedCoffee) {
+        BrewCoach.recommend(uiState.recentShots, selectedCoffee)
     }
 
     LaunchedEffect(uiState.telemetry.timestamp) {
@@ -110,6 +118,16 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
 
     LaunchedEffect(showProfileManager) {
         if (showProfileManager) viewModel.loadProfiles()
+    }
+    LaunchedEffect(uiState.coffeeBeans, uiState.recentShots) {
+        if (!coffeeSelectionInitialized && uiState.coffeeBeans.isNotEmpty()) {
+            selectedCoffeeBeanId = uiState.recentShots
+                .firstNotNullOfOrNull { shot -> shot.coffeeBeanId?.takeIf { id ->
+                    uiState.coffeeBeans.any { it.id == id }
+                } }
+                ?: uiState.coffeeBeans.first().id
+            coffeeSelectionInitialized = true
+        }
     }
     LaunchedEffect(uiState.connection.status) {
         if (uiState.connection.status == MachineConnectionStatus.Connected) {
@@ -126,6 +144,7 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                     Text(
                         when {
                             showCoffeeLibrary -> "Coffee Library"
+                            showShotHistory -> "Shot History"
                             showProfileManager -> "GaggiMate Profiles"
                             showDashboardSettings -> "Saved Dashboards"
                             else -> "BEANPILOT"
@@ -135,15 +154,77 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 },
             )
         },
+        bottomBar = {
+            val profileEditorOpen = showProfileManager && uiState.profileUiState.editingProfile != null
+            if (
+                uiState.connection.status == MachineConnectionStatus.Connected &&
+                selectedShotId == null &&
+                !showDashboardSettings &&
+                !profileEditorOpen
+            ) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = !showCoffeeLibrary && !showShotHistory && !showProfileManager,
+                        onClick = {
+                            showCoffeeLibrary = false
+                            showShotHistory = false
+                            showProfileManager = false
+                        },
+                        icon = { Icon(Icons.Filled.Dashboard, contentDescription = null) },
+                        label = { Text("Station") },
+                        alwaysShowLabel = false,
+                    )
+                    NavigationBarItem(
+                        selected = showCoffeeLibrary,
+                        onClick = {
+                            showCoffeeLibrary = true
+                            showShotHistory = false
+                            showProfileManager = false
+                        },
+                        icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
+                        label = { Text("Beans") },
+                        alwaysShowLabel = false,
+                    )
+                    NavigationBarItem(
+                        selected = showShotHistory,
+                        onClick = {
+                            showCoffeeLibrary = false
+                            showShotHistory = true
+                            showProfileManager = false
+                        },
+                        icon = { Icon(Icons.Filled.History, contentDescription = null) },
+                        label = { Text("Shots") },
+                        alwaysShowLabel = false,
+                    )
+                    NavigationBarItem(
+                        selected = showProfileManager,
+                        onClick = {
+                            showCoffeeLibrary = false
+                            showShotHistory = false
+                            showProfileManager = true
+                        },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                        label = { Text("Profiles") },
+                        alwaysShowLabel = false,
+                    )
+                }
+            }
+        },
     ) { paddingValues ->
         val selectedShot = uiState.recentShots.firstOrNull { it.id == selectedShotId }
         if (showCoffeeLibrary) {
             CoffeeLibraryScreen(
                 coffees = uiState.coffeeBeans,
+                shots = uiState.recentShots,
+                selectedCoffeeId = selectedCoffeeBeanId,
                 saveMessage = uiState.coffeeSaveMessage,
                 onSave = viewModel::saveCoffeeBean,
                 onDelete = viewModel::deleteCoffeeBean,
-                onBack = { showCoffeeLibrary = false },
+                onUseForCoach = { coffee ->
+                    selectedCoffeeBeanId = coffee.id
+                    coffeeSelectionInitialized = true
+                    showCoffeeLibrary = false
+                },
                 modifier = Modifier.padding(paddingValues),
             )
         } else if (showDashboardSettings) {
@@ -155,6 +236,15 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 onSaveAs = viewModel::saveWidgetLayoutAs,
                 onDelete = viewModel::deleteWidgetLayout,
                 onBack = { showDashboardSettings = false },
+                modifier = Modifier.padding(paddingValues),
+            )
+        } else if (showShotHistory) {
+            ShotHistoryScreen(
+                shots = uiState.recentShots,
+                onSelect = { shot ->
+                    selectedShotId = shot.id
+                    viewModel.loadShotDetails(shot)
+                },
                 modifier = Modifier.padding(paddingValues),
             )
         } else if (showProfileManager) {
@@ -234,20 +324,6 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             IconButton(
-                                onClick = { showProfileManager = true },
-                                modifier = Modifier.semantics { contentDescription = "Profiles" },
-                            ) {
-                                Icon(Icons.Filled.Settings, contentDescription = null)
-                            }
-                            IconButton(
-                                onClick = { showCoffeeLibrary = true },
-                                modifier = Modifier.semantics { contentDescription = "Coffee library" },
-                            ) {
-                                Icon(Icons.Filled.Coffee, contentDescription = null)
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(
                                 onClick = { widgetEditMode = !widgetEditMode },
                                 modifier = Modifier.semantics {
                                     contentDescription = if (widgetEditMode) "Done editing widgets" else "Edit widgets"
@@ -291,21 +367,9 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                     },
                 ) { widget ->
                     when (widget) {
+                        DashboardWidget.MachineControls -> Unit
                         DashboardWidget.MachineStatus -> MachineStatusCard(
                             uiState,
-                            compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
-                        )
-                        DashboardWidget.MachineControls -> MachineControlCard(
-                            connected = true,
-                            activeProfile = uiState.telemetry.activeProfile,
-                            state = uiState.profileUiState,
-                            onOpenProfiles = { showProfileManager = true },
-                            onStartBrew = viewModel::startBrew,
-                            onConfirmBrew = viewModel::confirmBrewStart,
-                            onCancelBrew = viewModel::cancelBrewStart,
-                            onStartFlush = viewModel::startFlush,
-                            onStopFlush = viewModel::stopFlush,
-                            onStopFlushManually = viewModel::stopFlushManually,
                             compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
                         )
                         DashboardWidget.LiveTelemetry -> LiveTelemetryChart(
@@ -314,6 +378,12 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                         )
                         DashboardWidget.BrewCoach -> BrewCoachCard(
                             recommendation,
+                            coffees = uiState.coffeeBeans,
+                            selectedCoffee = selectedCoffee,
+                            onCoffeeSelected = { coffee ->
+                                selectedCoffeeBeanId = coffee?.id
+                                coffeeSelectionInitialized = true
+                            },
                             compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
                         )
                         DashboardWidget.ShotHistory -> ShotHistoryWidget(
@@ -374,7 +444,14 @@ private fun MachineStatusCard(uiState: DashboardUiState, compact: Boolean = fals
 }
 
 @Composable
-private fun BrewCoachCard(recommendation: BrewRecommendation, compact: Boolean = false) {
+private fun BrewCoachCard(
+    recommendation: BrewRecommendation,
+    coffees: List<CoffeeBean>,
+    selectedCoffee: CoffeeBean?,
+    onCoffeeSelected: (CoffeeBean?) -> Unit,
+    compact: Boolean = false,
+) {
+    var coffeeMenuExpanded by rememberSaveable { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(if (compact) 12.dp else 16.dp),
@@ -391,6 +468,32 @@ private fun BrewCoachCard(recommendation: BrewRecommendation, compact: Boolean =
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelSmall,
                 )
+            }
+            Box {
+                TextButton(onClick = { coffeeMenuExpanded = true }) {
+                    Text(selectedCoffee?.let { "${it.beanName} · ${it.roaster}" } ?: "All coffees")
+                }
+                DropdownMenu(
+                    expanded = coffeeMenuExpanded,
+                    onDismissRequest = { coffeeMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("All coffees") },
+                        onClick = {
+                            onCoffeeSelected(null)
+                            coffeeMenuExpanded = false
+                        },
+                    )
+                    coffees.forEach { coffee ->
+                        DropdownMenuItem(
+                            text = { Text("${coffee.beanName} · ${coffee.roaster}") },
+                            onClick = {
+                                onCoffeeSelected(coffee)
+                                coffeeMenuExpanded = false
+                            },
+                        )
+                    }
+                }
             }
             Text(
                 recommendation.title,
@@ -684,10 +787,11 @@ private fun ShotHistoryWidget(
     }
 }
 
+@Suppress("DEPRECATION")
 private fun DashboardWidget.title(): String =
     when (this) {
         DashboardWidget.MachineStatus -> "Machine status"
-        DashboardWidget.MachineControls -> "Brew controls"
+        DashboardWidget.MachineControls -> "Legacy widget"
         DashboardWidget.LiveTelemetry -> "Live telemetry"
         DashboardWidget.BrewCoach -> "Brew Coach"
         DashboardWidget.ShotHistory -> "Shot history"
@@ -807,6 +911,12 @@ private fun ShotSummaryCard(shot: ShotRecord, onClick: () -> Unit) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            Text(
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(Date(shot.timestamp)),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             val doseIn = shot.doseInGr?.let { "${it.oneDecimal()}g in / " } ?: ""
             val doseOut = shot.doseOutGr?.let { "${it.oneDecimal()}g out" } ?: "Output weight unavailable"
             Text(
@@ -1190,12 +1300,15 @@ private fun ReviewNumberField(
 @Composable
 private fun CoffeeLibraryScreen(
     coffees: List<CoffeeBean>,
+    shots: List<ShotRecord>,
+    selectedCoffeeId: Long?,
     saveMessage: String?,
     onSave: (CoffeeBean) -> Unit,
     onDelete: (Long) -> Unit,
-    onBack: () -> Unit,
+    onUseForCoach: (CoffeeBean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showAddCoffee by rememberSaveable { mutableStateOf(false) }
     var beanName by rememberSaveable { mutableStateOf("") }
     var roaster by rememberSaveable { mutableStateOf("") }
     var origin by rememberSaveable { mutableStateOf("") }
@@ -1234,24 +1347,84 @@ private fun CoffeeLibraryScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack) { Text("Back to dashboard") }
+        Text(
+            "BEAN LIBRARY",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
         Text("Your coffees", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Choose a coffee to focus shot comparisons and Brew Coach recommendations.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (coffees.isEmpty()) {
-            Text("No coffees added yet. Add one below, then link it to shot reviews.")
+            Text("No coffees added yet. Add a bean to start building its shot history.")
         } else {
             coffees.forEach { coffee ->
+                val beanShots = shots.filter { shot ->
+                    shot.coffeeBeanId == coffee.id ||
+                        (shot.coffeeBeanId == null &&
+                            shot.coffeeName?.trim()?.equals(coffee.beanName.trim(), ignoreCase = true) == true)
+                }
+                val ratings = beanShots.mapNotNull { it.rating }
+                val averageRating = ratings.takeIf { it.isNotEmpty() }?.average()
+                val latestShot = beanShots.maxByOrNull { it.timestamp }
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(coffee.beanName, style = MaterialTheme.typography.titleMedium)
-                        Text(coffee.roaster, style = MaterialTheme.typography.bodyMedium)
-                        val details = listOfNotNull(coffee.origin, coffee.process, coffee.roastDate)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(coffee.beanName, style = MaterialTheme.typography.titleLarge)
+                                Text(
+                                    coffee.roaster,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            FilterChip(
+                                selected = selectedCoffeeId == coffee.id,
+                                onClick = { onUseForCoach(coffee) },
+                                label = { Text(if (selectedCoffeeId == coffee.id) "ACTIVE" else "FOCUS") },
+                            )
+                        }
+                        HorizontalDivider()
+                        val details = listOfNotNull(
+                            coffee.origin?.takeIf(String::isNotBlank),
+                            coffee.process?.takeIf(String::isNotBlank),
+                            coffee.roastDate?.takeIf(String::isNotBlank),
+                        )
                         if (details.isNotEmpty()) {
                             Text(details.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
                         }
-                        coffee.notes?.let {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                "${beanShots.size} recent shots · " +
+                                    (averageRating?.let { "Avg ${it.oneDecimal()}/5" } ?: "Not rated"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            latestShot?.let {
+                                Text(
+                                    "LAST ${DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it.timestamp))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        coffee.notes?.takeIf(String::isNotBlank)?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall)
                         }
                         TextButton(onClick = { pendingDeleteId = coffee.id }) {
@@ -1261,71 +1434,95 @@ private fun CoffeeLibraryScreen(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text("Add coffee", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(
-            value = beanName,
-            onValueChange = { beanName = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Bean name *") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = roaster,
-            onValueChange = { roaster = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Roaster *") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = origin,
-            onValueChange = { origin = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Origin") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = process,
-            onValueChange = { process = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Process") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = roastDate,
-            onValueChange = { roastDate = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Roast date") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Coffee notes") },
-            minLines = 2,
-        )
         Button(
             onClick = {
-                if (beanName.isBlank() || roaster.isBlank()) {
-                    validationError = "Bean name and roaster are required."
-                } else {
-                    validationError = null
-                    onSave(
-                        CoffeeBean(
-                            beanName = beanName,
-                            roaster = roaster,
-                            origin = origin,
-                            process = process,
-                            roastDate = roastDate,
-                            notes = notes,
-                        ),
-                    )
-                }
+                showAddCoffee = !showAddCoffee
+                validationError = null
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Save coffee")
+            Text(if (showAddCoffee) "Cancel adding coffee" else "Add coffee")
+        }
+        if (showAddCoffee) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("New coffee", style = MaterialTheme.typography.titleMedium)
+                    OutlinedTextField(
+                        value = beanName,
+                        onValueChange = { beanName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Bean name *") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = roaster,
+                        onValueChange = { roaster = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Roaster *") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = origin,
+                        onValueChange = { origin = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Origin") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = process,
+                        onValueChange = { process = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Process") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = roastDate,
+                        onValueChange = { roastDate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Roast date") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Coffee notes") },
+                        minLines = 2,
+                    )
+                    Button(
+                        onClick = {
+                            if (beanName.isBlank() || roaster.isBlank()) {
+                                validationError = "Bean name and roaster are required."
+                            } else {
+                                validationError = null
+                                onSave(
+                                    CoffeeBean(
+                                        beanName = beanName,
+                                        roaster = roaster,
+                                        origin = origin,
+                                        process = process,
+                                        roastDate = roastDate,
+                                        notes = notes,
+                                    ),
+                                )
+                                beanName = ""
+                                roaster = ""
+                                origin = ""
+                                process = ""
+                                roastDate = ""
+                                notes = ""
+                                showAddCoffee = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Save coffee")
+                    }
+                }
+            }
         }
         validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         saveMessage?.let {
@@ -1337,6 +1534,36 @@ private fun CoffeeLibraryScreen(
                     MaterialTheme.colorScheme.error
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun ShotHistoryScreen(
+    shots: List<ShotRecord>,
+    onSelect: (ShotRecord) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("EXTRACTION LOG", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("Shot history", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "${shots.size} recent shots · Select an extraction to review its data and tasting notes.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (shots.isEmpty()) {
+            Text("Sync machine history to see extractions here.")
+        } else {
+            shots.forEach { shot ->
+                ShotSummaryCard(shot = shot) { onSelect(shot) }
+            }
         }
     }
 }

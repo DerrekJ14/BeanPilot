@@ -12,7 +12,6 @@ import com.beanpilot.data.remote.GaggiMateShotNotes
 import com.beanpilot.data.remote.GaggiMateControlClient
 import com.beanpilot.data.remote.GaggiMateProfile
 import com.beanpilot.data.remote.GaggiMateProfileCodec
-import com.beanpilot.data.remote.GaggiMateWarning
 import com.beanpilot.data.remote.mergeReview
 import com.beanpilot.data.remote.MachineConnectionState
 import com.beanpilot.data.remote.MachineConnectionStatus
@@ -25,7 +24,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -92,9 +90,6 @@ class DashboardViewModel @Inject constructor(
         } ?: "default",
     )
     private val widgetLayoutMessage = MutableStateFlow<String?>(null)
-    private var flushStartJob: Job? = null
-    private var flushStopInProgress = false
-
     private val widgetLayoutState = combine(
         savedWidgetLayouts,
         selectedWidgetLayoutId,
@@ -411,126 +406,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    fun startBrew() {
-        sendBrewStart(ignoreWarnings = false)
-    }
-
-    fun confirmBrewStart() {
-        profileState.value = profileState.value.copy(pendingWarnings = emptyList())
-        sendBrewStart(ignoreWarnings = true)
-    }
-
-    fun cancelBrewStart() {
-        profileState.value = profileState.value.copy(pendingWarnings = emptyList())
-        viewModelScope.launch {
-            try {
-                controlClient.cancelBrewConfirmation(machineAddress.value)
-                profileState.value = profileState.value.copy(message = "Brew start cancelled.")
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                Log.e(TAG, "Could not cancel GaggiMate brew confirmation", exception)
-                profileState.value = profileState.value.copy(
-                    message = exception.message ?: "Could not cancel the brew confirmation.",
-                )
-            }
-        }
-    }
-
-    private fun sendBrewStart(ignoreWarnings: Boolean) {
-        if (profileState.value.brewStarting) return
-        profileState.value = profileState.value.copy(brewStarting = true)
-        viewModelScope.launch {
-            profileState.value = profileState.value.copy(message = null)
-            try {
-                val warnings = controlClient.startProcess(machineAddress.value, ignoreWarnings)
-                if (!warnings.isNullOrEmpty()) {
-                    profileState.value = profileState.value.copy(pendingWarnings = warnings)
-                } else {
-                    profileState.value = profileState.value.copy(
-                        pendingWarnings = emptyList(),
-                        message = "Brew start command sent to GaggiMate.",
-                    )
-                }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                Log.e(TAG, "Could not start GaggiMate process", exception)
-                profileState.value = profileState.value.copy(
-                    message = exception.message ?: "Could not send the brew start command.",
-                )
-            } finally {
-                profileState.value = profileState.value.copy(brewStarting = false)
-            }
-        }
-    }
-
-    fun startFlush() {
-        if (profileState.value.flushActive || profileState.value.flushHeld) return
-        profileState.value = profileState.value.copy(flushHeld = true)
-        val address = machineAddress.value
-        flushStartJob = viewModelScope.launch {
-            profileState.value = profileState.value.copy(message = "Starting flush…")
-            try {
-                controlClient.startFlush(address)
-                profileState.value = profileState.value.copy(
-                    flushActive = true,
-                    message = "Flush running. Release to stop.",
-                )
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                Log.e(TAG, "Could not start GaggiMate flush", exception)
-                profileState.value = profileState.value.copy(
-                    flushHeld = false,
-                    message = exception.message ?: "Could not start flush.",
-                )
-                flushStartJob = null
-            }
-        }
-    }
-
-    fun stopFlush() {
-        stopFlush(force = false)
-    }
-
-    fun stopFlushManually() {
-        stopFlush(force = true)
-    }
-
-    private fun stopFlush(force: Boolean) {
-        if (flushStopInProgress) return
-        val startJob = flushStartJob
-        if (!force && startJob == null && !profileState.value.flushActive) return
-        flushStopInProgress = true
-        val address = machineAddress.value
-        viewModelScope.launch {
-            startJob?.join()
-            try {
-                if (force || profileState.value.flushActive) {
-                    controlClient.stopFlush(address)
-                    profileState.value = profileState.value.copy(
-                        flushActive = false,
-                        message = "Flush stopped.",
-                    )
-                }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                Log.e(TAG, "Could not stop GaggiMate flush", exception)
-                profileState.value = profileState.value.copy(
-                    message = exception.message ?: "Could not stop flush.",
-                )
-            } finally {
-                flushStopInProgress = false
-                profileState.value = profileState.value.copy(
-                    flushHeld = false,
-                )
-                if (!profileState.value.flushActive) flushStartJob = null
-            }
-        }
-    }
-
     fun syncShotHistory() {
         val address = machineAddress.value
         if (address.isBlank()) {
@@ -726,11 +601,7 @@ data class ProfileUiState(
     val loading: Boolean = false,
     val message: String? = null,
     val editingProfile: GaggiMateProfile? = null,
-    val pendingWarnings: List<GaggiMateWarning> = emptyList(),
     val layout: DashboardLayout = DashboardLayout.BrewStation,
-    val brewStarting: Boolean = false,
-    val flushHeld: Boolean = false,
-    val flushActive: Boolean = false,
     val savedWidgetLayouts: List<SavedDashboardLayout> = listOf(SavedDashboardLayout.default()),
     val selectedWidgetLayoutId: String = "default",
     val widgetLayoutMessage: String? = null,

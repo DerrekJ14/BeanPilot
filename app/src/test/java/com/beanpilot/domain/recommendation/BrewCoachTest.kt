@@ -1,6 +1,7 @@
 package com.beanpilot.domain.recommendation
 
 import com.beanpilot.domain.model.ShotRecord
+import com.beanpilot.domain.model.CoffeeBean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,7 +11,7 @@ class BrewCoachTest {
     fun emptyHistoryAsksForReviewedShotData() {
         val recommendation = BrewCoach.recommend(emptyList())
 
-        assertEquals("Build your extraction baseline", recommendation.title)
+        assertEquals("Choose a coffee to focus your profile", recommendation.title)
         assertEquals("LEARNING", recommendation.confidence)
     }
 
@@ -79,6 +80,44 @@ class BrewCoachTest {
             ),
         )
 
-        assertEquals("Build your extraction baseline", recommendation.title)
+        assertEquals("Choose a coffee to focus your profile", recommendation.title)
+    }
+
+    @Test
+    fun selectedCoffeeOnlyUsesShotsLinkedToThatCoffee() {
+        val recommendation = BrewCoach.recommend(
+            shots = listOf(
+                ShotRecord(
+                    id = 1,
+                    timestamp = 2,
+                    coffeeBeanId = 8,
+                    brewTimeMs = 18_000,
+                    profileUsed = "Adaptive",
+                    balanceTaste = "sour",
+                ),
+                ShotRecord(
+                    id = 2,
+                    timestamp = 1,
+                    coffeeBeanId = 7,
+                    brewTimeMs = 34_000,
+                    profileUsed = "Adaptive",
+                    balanceTaste = "balanced",
+                ),
+            ),
+            selectedCoffee = CoffeeBean(id = 7, roaster = "Roaster", beanName = "House"),
+        )
+
+        assertEquals("Tune House one variable at a time", recommendation.title)
+    }
+
+    @Test
+    fun selectedCoffeeWithoutHistoryRequestsBeanSpecificBaseline() {
+        val recommendation = BrewCoach.recommend(
+            shots = emptyList(),
+            selectedCoffee = CoffeeBean(id = 7, roaster = "Roaster", beanName = "House"),
+        )
+
+        assertEquals("Start a profile for House", recommendation.title)
+        assertTrue(recommendation.detail.contains("House"))
     }
 }

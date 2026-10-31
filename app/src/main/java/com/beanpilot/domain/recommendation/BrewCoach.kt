@@ -1,6 +1,7 @@
 package com.beanpilot.domain.recommendation
 
 import com.beanpilot.domain.model.ShotRecord
+import com.beanpilot.domain.model.CoffeeBean
 import java.util.Locale
 
 data class BrewRecommendation(
@@ -11,14 +12,25 @@ data class BrewRecommendation(
 )
 
 object BrewCoach {
-    fun recommend(shots: List<ShotRecord>): BrewRecommendation {
-        val completeShots = shots.filterNot { it.incomplete }
+    fun recommend(
+        shots: List<ShotRecord>,
+        selectedCoffee: CoffeeBean? = null,
+    ): BrewRecommendation {
+        val completeShots = shots
+            .filterNot { it.incomplete }
+            .filter { selectedCoffee == null || belongsToCoffee(it, selectedCoffee) }
         val latest = completeShots.maxByOrNull { it.timestamp }
             ?: return BrewRecommendation(
-                title = "Build your extraction baseline",
-                detail = "Review a completed shot and record dose, yield, taste, and a rating. " +
-                    "BeanPilot uses those details to make useful, coffee-specific suggestions.",
-                basis = "Waiting for reviewed shot data",
+                title = selectedCoffee?.let { "Start a profile for ${it.beanName}" }
+                    ?: "Choose a coffee to focus your profile",
+                detail = if (selectedCoffee == null) {
+                    "Select a bean to compare its shot history and get extraction suggestions focused on that coffee."
+                } else {
+                    "No completed shots are linked to ${selectedCoffee.beanName} yet. Record dose, yield, taste, " +
+                        "and a rating after your next extraction to build a bean-specific baseline."
+                },
+                basis = if (selectedCoffee == null) "No reviewed shot history yet"
+                else "No completed shots linked to this coffee",
                 confidence = "LEARNING",
             )
 
@@ -96,13 +108,24 @@ object BrewCoach {
         }
 
         return BrewRecommendation(
-            title = "Add a taste result to sharpen the advice",
-            detail = "Record dose, yield, grinder setting, taste balance, and a rating in shot review. " +
-                "The coach can then compare this coffee with your best results.",
-            basis = "Not enough comparable rated shots yet",
+            title = selectedCoffee?.let { "Tune ${it.beanName} one variable at a time" }
+                ?: "Select a coffee for focused advice",
+            detail = if (selectedCoffee == null) {
+                "Choose a bean to compare shots against your best results for that coffee."
+            } else {
+                "Record dose, yield, grinder setting, taste balance, and a rating for this coffee. " +
+                    "BeanPilot can then compare it with your best results and suggest profile adjustments."
+            },
+            basis = if (selectedCoffee == null) "No selected coffee"
+            else "Not enough comparable rated shots for this coffee",
             confidence = "LEARNING",
         )
     }
+
+    private fun belongsToCoffee(shot: ShotRecord, coffee: CoffeeBean): Boolean =
+        shot.coffeeBeanId == coffee.id ||
+            (shot.coffeeBeanId == null &&
+                shot.coffeeName?.trim()?.equals(coffee.beanName.trim(), ignoreCase = true) == true)
 
     private fun sameCoffee(first: ShotRecord, second: ShotRecord): Boolean =
         if (first.coffeeBeanId != null && second.coffeeBeanId != null) {

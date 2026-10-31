@@ -37,11 +37,6 @@ data class GaggiMateProfilePhase(
     val targets: List<JsonElement>? = null,
 )
 
-data class GaggiMateWarning(
-    val key: String,
-    val severity: Int,
-)
-
 object GaggiMateProfileCodec {
     fun decode(json: Json, source: String): GaggiMateProfile {
         val element = json.parseToJsonElement(source)
