@@ -20,6 +20,7 @@ This repository now includes the initial project skeleton for the requested Andr
 - A bounded real-time pressure, flow, temperature, and available weight telemetry graph
 - Shot reviews with 1–10 bitter-to-sour balance and light-to-full body ratings
 - Combined shot telemetry graph with metric toggles and individual graph views
+- Persistent per-measurement graph color selection shared between live and shot graphs
 - Bean-specific, explainable shot recommendations
 - A connection-first screen that collapses to a machine status bar after connecting
 - Separate station, bean library, shot history, and profile destinations
@@ -47,7 +48,7 @@ The documented status events provide temperature, pressure, flow, machine state,
 
 Selecting **Review shot** fetches the individual `/api/history/<six-digit-id>.slog` log and plots measured scale weight separately from estimated weight. It compares the final measured and estimated readings with the shot-index output and flags material discrepancies instead of treating estimates as measured beverage yield. Coffee, dose, grinder setting, rating, taste balance, and notes are saved locally and synced to GaggiMate through its WebSocket notes API. Existing remote note fields are fetched and merged before save to avoid erasing fields BeanPilot does not edit. Local values remain intact during later history imports.
 
-Shot reviews score taste balance from 1 (bitter) to 10 (sour) and body from 1 (light) to 10 (full); both can be left unrated. Body is stored locally because GaggiMate's notes API has no body field. Telemetry starts as an overlaid combined graph with a visibility toggle for pressure, temperature, flow, measured weight, and estimated weight. Each line is normalized to its own range; use the per-metric range labels for values. The graph menu switches to an individual measurement view and back.
+Shot reviews score taste balance from 1 (bitter) to 10 (sour) and body from 1 (light) to 10 (full); both can be left unrated. Body is stored locally because GaggiMate's notes API has no body field. Telemetry starts as an overlaid combined graph with a visibility toggle for pressure, temperature, flow, measured weight, and estimated weight. Each line is normalized to its own range; use the per-metric range labels for values. Use the color-lens button beside each metric to choose a line color in the shot review or live telemetry graph; custom colors are saved on the device and shared between both graphs. The graph menu switches to an individual measurement view and back.
 
 Add coffees in **Beans** and link each to a shot review; coffee metadata and shot links are stored locally. Bean cards summarize linked shots and ratings, and selecting a bean focuses Brew Coach on that coffee. The GaggiMate `beanType` field is updated with the linked bean name on review sync. BeanPilot uses a bean-to-brew workflow inspired by coffee-tracking apps such as [Beanconqueror](https://github.com/graphefruit/Beanconqueror), while retaining its own dark, telemetry-first visual design.
 

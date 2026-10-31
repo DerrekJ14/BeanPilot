@@ -3,19 +3,36 @@ package com.beanpilot.ui.dashboard
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.beanpilot.domain.model.TelemetrySnapshot
 import java.util.Locale
@@ -23,15 +40,31 @@ import java.util.Locale
 @Composable
 fun LiveTelemetryChart(
     points: List<TelemetrySnapshot>,
+    measurementColors: Map<String, Color> = emptyMap(),
+    onGraphColorChange: (String, Int?) -> Unit,
     compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val lines = listOf(
-        TelemetryLine("PRESSURE", "bar", colors.primary) { it.pressureBar },
-        TelemetryLine("FLOW", "ml/min", colors.secondary) { it.flowMlPerMin },
-        TelemetryLine("TEMP", "°C", colors.tertiary) { it.temperatureC },
-        TelemetryLine("WEIGHT", "g", Color(0xFFFFB86B)) { it.weightGr },
+        TelemetryLine("pressure", "PRESSURE", "bar", colors.primary, measurementColors["pressure"] ?: colors.primary) {
+            it.pressureBar
+        },
+        TelemetryLine("flow", "FLOW", "ml/min", colors.secondary, measurementColors["flow"] ?: colors.secondary) {
+            it.flowMlPerMin
+        },
+        TelemetryLine(
+            "temperature",
+            "TEMP",
+            "°C",
+            colors.tertiary,
+            measurementColors["temperature"] ?: colors.tertiary,
+        ) {
+            it.temperatureC
+        },
+        TelemetryLine("weight", "WEIGHT", "g", Color(0xFFFFB86B), measurementColors["weight"] ?: Color(0xFFFFB86B)) {
+            it.weightGr
+        },
     )
 
     Card(modifier = modifier.fillMaxWidth()) {
@@ -60,7 +93,10 @@ fun LiveTelemetryChart(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text(line.label, color = line.color, style = MaterialTheme.typography.labelSmall)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(line.label, color = line.color, style = MaterialTheme.typography.labelSmall)
+                                    TelemetryColorControl(line, onGraphColorChange)
+                                }
                                 Text(
                                     points.lastOrNull()?.let(line.valueOf)
                                         ?.let { "${it.oneDecimal()} ${line.unit}" } ?: "— ${line.unit}",
@@ -76,8 +112,12 @@ fun LiveTelemetryChart(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(line.label, color = line.color, style = MaterialTheme.typography.labelMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(line.label, color = line.color, style = MaterialTheme.typography.labelMedium)
+                            TelemetryColorControl(line, onGraphColorChange)
+                        }
                         Text(
                             value?.let { "${it.oneDecimal()} ${line.unit}" } ?: "— ${line.unit}",
                             style = MaterialTheme.typography.labelMedium,
@@ -137,10 +177,57 @@ fun LiveTelemetryChart(
 }
 
 private data class TelemetryLine(
+    val id: String,
     val label: String,
     val unit: String,
+    val defaultColor: Color,
     val color: Color,
     val valueOf: (TelemetrySnapshot) -> Double?,
 )
+
+@Composable
+private fun TelemetryColorControl(
+    line: TelemetryLine,
+    onGraphColorChange: (String, Int?) -> Unit,
+) {
+    var expanded by rememberSaveable(line.id) { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(32.dp)
+                .semantics { contentDescription = "Change ${line.label} graph color" },
+        ) {
+            Icon(Icons.Filled.ColorLens, contentDescription = null, tint = line.color)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Theme default") },
+                leadingIcon = {
+                    Icon(Icons.Filled.Circle, contentDescription = null, tint = line.defaultColor)
+                },
+                onClick = {
+                    onGraphColorChange(line.id, null)
+                    expanded = false
+                },
+            )
+            GRAPH_COLOR_CHOICES.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.name) },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Circle, contentDescription = null, tint = choice.color)
+                    },
+                    onClick = {
+                        onGraphColorChange(line.id, choice.color.toArgb())
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
 
 private fun Double.oneDecimal(): String = String.format(Locale.getDefault(), "%.1f", this)

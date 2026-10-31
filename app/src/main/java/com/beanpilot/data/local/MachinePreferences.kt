@@ -43,14 +43,44 @@ class MachinePreferences @Inject constructor(
         preferences.edit().putString(SELECTED_CUSTOM_DASHBOARD_LAYOUT_KEY, id).apply()
     }
 
+    fun getGraphMeasurementColors(): Map<String, Int> =
+        GRAPH_MEASUREMENT_KEYS.mapNotNull { measurement ->
+            preferences.getInt(graphMeasurementColorKey(measurement), 0)
+                .takeIf { it != 0 }
+                ?.let { measurement to it }
+        }.toMap()
+
+    fun saveGraphMeasurementColor(measurement: String, color: Int?) {
+        require(measurement in GRAPH_MEASUREMENT_KEYS) { "Unknown graph measurement." }
+        val editor = preferences.edit()
+        if (color == null) {
+            editor.remove(graphMeasurementColorKey(measurement))
+        } else {
+            editor.putInt(graphMeasurementColorKey(measurement), color)
+        }
+        editor.apply()
+    }
+
+    private fun graphMeasurementColorKey(measurement: String) =
+        "$GRAPH_MEASUREMENT_COLOR_PREFIX$measurement"
+
     private companion object {
         const val PREFERENCES_NAME = "beanpilot_preferences"
         const val MACHINE_ADDRESS_KEY = "gaggimate_address"
         const val DASHBOARD_LAYOUT_KEY = "dashboard_layout"
         const val SAVED_DASHBOARD_LAYOUTS_KEY = "saved_dashboard_layouts"
         const val SELECTED_CUSTOM_DASHBOARD_LAYOUT_KEY = "selected_custom_dashboard_layout"
+        const val GRAPH_MEASUREMENT_COLOR_PREFIX = "graph_measurement_color_"
         const val DEFAULT_DASHBOARD_LAYOUT = "brew_station"
         const val DEFAULT_CUSTOM_LAYOUT_ID = "default"
         val DASHBOARD_LAYOUTS = setOf("brew_station", "classic", "compact")
+        val GRAPH_MEASUREMENT_KEYS = setOf(
+            "pressure",
+            "flow",
+            "temperature",
+            "weight",
+            "measuredWeight",
+            "estimatedWeight",
+        )
     }
 }

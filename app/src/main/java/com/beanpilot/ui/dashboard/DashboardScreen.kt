@@ -23,6 +23,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
@@ -70,8 +72,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -98,6 +102,10 @@ import kotlin.math.roundToInt
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val graphColorValues by viewModel.graphMeasurementColors.collectAsStateWithLifecycle()
+    val graphColors = remember(graphColorValues) {
+        graphColorValues.mapValues { Color(it.value) }
+    }
     var address by rememberSaveable { mutableStateOf(uiState.machineAddress) }
     var selectedShotId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showCoffeeLibrary by rememberSaveable { mutableStateOf(false) }
@@ -277,6 +285,8 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 coffees = uiState.coffeeBeans,
                 detailState = uiState.shotDetail,
                 saveMessage = uiState.reviewSaveMessage,
+                graphColors = graphColors,
+                onGraphColorChange = viewModel::setGraphMeasurementColor,
                 onBack = { selectedShotId = null },
                 onSave = viewModel::saveShotReview,
                 modifier = Modifier.padding(paddingValues),
@@ -407,6 +417,8 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                         )
                         DashboardWidget.LiveTelemetry -> LiveTelemetryChart(
                             points = liveTelemetry,
+                            measurementColors = graphColors,
+                            onGraphColorChange = viewModel::setGraphMeasurementColor,
                             compact = activeLayout.sizes[widget] == DashboardWidgetSize.Compact,
                         )
                         DashboardWidget.BrewCoach -> BrewCoachCard(
@@ -989,6 +1001,8 @@ private fun ShotReviewScreen(
     coffees: List<CoffeeBean>,
     detailState: ShotDetailUiState,
     saveMessage: String?,
+    graphColors: Map<String, Color>,
+    onGraphColorChange: (String, Int?) -> Unit,
     onBack: () -> Unit,
     onSave: (ShotRecord) -> Unit,
     modifier: Modifier = Modifier,
@@ -1333,6 +1347,8 @@ private fun ShotReviewScreen(
                     samples = detailState.samples,
                     shownMetrics = shownMetrics,
                     individualMetric = individualMetric,
+                    graphColors = graphColors,
+                    onGraphColorChange = onGraphColorChange,
                     onIndividualMetricChange = { individualMetric = it },
                 )
             }
@@ -1634,8 +1650,11 @@ private fun ShotMeasurementsChart(
     samples: List<GaggiMateShotSample>,
     shownMetrics: MutableList<String>,
     individualMetric: String?,
+    graphColors: Map<String, Color>,
+    onGraphColorChange: (String, Int?) -> Unit,
     onIndividualMetricChange: (String?) -> Unit,
 ) {
+    var colorMenuMetric by rememberSaveable { mutableStateOf<String?>(null) }
     val metrics = listOf(
         ShotMetric(
             id = "pressure",
@@ -1679,10 +1698,10 @@ private fun ShotMeasurementsChart(
             shortLabel = "EST",
             unit = "g",
             values = samples.mapNotNull { sample -> sample.estimatedWeightGr?.let { sample.timeMs to it } },
-            color = MaterialTheme.colorScheme.inversePrimary,
+            color = MaterialTheme.colorScheme.error,
             icon = Icons.Filled.Scale,
         ),
-    )
+    ).map { metric -> metric.copy(color = graphColors[metric.id] ?: metric.color) }
     val selectedIndividual = metrics.firstOrNull { it.id == individualMetric }
     if (selectedIndividual != null) {
         var menuExpanded by rememberSaveable(individualMetric) { mutableStateOf(false) }
@@ -1787,20 +1806,60 @@ private fun ShotMeasurementsChart(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     metrics.forEach { metric ->
-                        FilterChip(
-                            selected = metric.id in shownMetrics,
-                            onClick = {
-                                if (metric.id in shownMetrics) shownMetrics.remove(metric.id)
-                                else shownMetrics.add(metric.id)
-                            },
-                            modifier = Modifier.semantics {
-                                contentDescription = "${metric.label} ${if (metric.id in shownMetrics) "visible" else "hidden"}"
-                            },
-                            label = { Text(metric.shortLabel) },
-                            leadingIcon = {
-                                Icon(metric.icon, contentDescription = null, tint = metric.color)
-                            },
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            FilterChip(
+                                selected = metric.id in shownMetrics,
+                                onClick = {
+                                    if (metric.id in shownMetrics) shownMetrics.remove(metric.id)
+                                    else shownMetrics.add(metric.id)
+                                },
+                                modifier = Modifier.semantics {
+                                    contentDescription =
+                                        "${metric.label} ${if (metric.id in shownMetrics) "visible" else "hidden"}"
+                                },
+                                label = { Text(metric.shortLabel) },
+                                leadingIcon = {
+                                    Icon(metric.icon, contentDescription = null, tint = metric.color)
+                                },
+                            )
+                            Box {
+                                IconButton(
+                                    onClick = { colorMenuMetric = metric.id },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = "Change ${metric.label} graph color"
+                                    },
+                                ) {
+                                    Icon(Icons.Filled.ColorLens, contentDescription = null, tint = metric.color)
+                                }
+                                DropdownMenu(
+                                    expanded = colorMenuMetric == metric.id,
+                                    onDismissRequest = { colorMenuMetric = null },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Theme default") },
+                                        leadingIcon = {
+                                            Icon(Icons.Filled.Circle, contentDescription = null, tint = metric.defaultColor)
+                                        },
+                                        onClick = {
+                                            onGraphColorChange(metric.id, null)
+                                            colorMenuMetric = null
+                                        },
+                                    )
+                                    GRAPH_COLOR_CHOICES.forEach { choice ->
+                                        DropdownMenuItem(
+                                            text = { Text(choice.name) },
+                                            leadingIcon = {
+                                                Icon(Icons.Filled.Circle, contentDescription = null, tint = choice.color)
+                                            },
+                                            onClick = {
+                                                onGraphColorChange(metric.id, choice.color.toArgb())
+                                                colorMenuMetric = null
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 val visibleMetrics = metrics.filter { it.id in shownMetrics }
@@ -1865,7 +1924,24 @@ private data class ShotMetric(
     val unit: String,
     val values: List<Pair<Long, Double>>,
     val color: androidx.compose.ui.graphics.Color,
+    val defaultColor: androidx.compose.ui.graphics.Color = color,
     val icon: ImageVector,
+)
+
+internal data class GraphColorChoice(
+    val name: String,
+    val color: Color,
+)
+
+internal val GRAPH_COLOR_CHOICES = listOf(
+    GraphColorChoice("Teal", Color(0xFF61D8C5)),
+    GraphColorChoice("Blue", Color(0xFF71A7FF)),
+    GraphColorChoice("Violet", Color(0xFFBB86FC)),
+    GraphColorChoice("Orange", Color(0xFFFFB86B)),
+    GraphColorChoice("Red", Color(0xFFFF6B6B)),
+    GraphColorChoice("Green", Color(0xFF7BD88F)),
+    GraphColorChoice("Yellow", Color(0xFFFFD166)),
+    GraphColorChoice("White", Color(0xFFE6EBF0)),
 )
 
 @Composable

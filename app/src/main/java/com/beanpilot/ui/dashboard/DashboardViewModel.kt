@@ -48,6 +48,12 @@ class DashboardViewModel @Inject constructor(
     private val machineAddress = MutableStateFlow(machinePreferences.getMachineAddress())
     private val historySyncMessage = MutableStateFlow<String?>(null)
     private val addressError = MutableStateFlow<String?>(null)
+    val graphMeasurementColors = MutableStateFlow(machinePreferences.getGraphMeasurementColors())
+
+    fun setGraphMeasurementColor(measurement: String, color: Int?) {
+        machinePreferences.saveGraphMeasurementColor(measurement, color)
+        graphMeasurementColors.value = machinePreferences.getGraphMeasurementColors()
+    }
 
     private val machineState = combine(
         webSocketClient.telemetry,
