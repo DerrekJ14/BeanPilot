@@ -25,6 +25,7 @@ data class ShotEntity(
     val grinderSetting: Double? = null,
     val rating: Int? = null,
     val balanceTaste: String? = null,
+    val bodyRating: Int? = null,
     val incomplete: Boolean = false,
     val notes: String? = null,
 )

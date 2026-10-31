@@ -16,7 +16,10 @@ This repository now includes the initial project skeleton for the requested Andr
 - Local shot reviews for coffee, dose, grinder setting, rating, and tasting notes
 - A local coffee library linked to shot reviews
 - GaggiMate profile browsing, selection, editing, and JSON import
+- Miniature pressure/flow profile curves in the profile list and an interactive editor curve for phase duration and pump targets
 - A bounded real-time pressure, flow, temperature, and available weight telemetry graph
+- Shot reviews with 1–10 bitter-to-sour balance and light-to-full body ratings
+- Combined shot telemetry graph with metric toggles and individual graph views
 - Bean-specific, explainable shot recommendations
 - A connection-first screen that collapses to a machine status bar after connecting
 - Separate station, bean library, shot history, and profile destinations
@@ -44,9 +47,11 @@ The documented status events provide temperature, pressure, flow, machine state,
 
 Selecting **Review shot** fetches the individual `/api/history/<six-digit-id>.slog` log and plots measured scale weight separately from estimated weight. It compares the final measured and estimated readings with the shot-index output and flags material discrepancies instead of treating estimates as measured beverage yield. Coffee, dose, grinder setting, rating, taste balance, and notes are saved locally and synced to GaggiMate through its WebSocket notes API. Existing remote note fields are fetched and merged before save to avoid erasing fields BeanPilot does not edit. Local values remain intact during later history imports.
 
+Shot reviews score taste balance from 1 (bitter) to 10 (sour) and body from 1 (light) to 10 (full); both can be left unrated. Body is stored locally because GaggiMate's notes API has no body field. Telemetry starts as an overlaid combined graph with a visibility toggle for pressure, temperature, flow, measured weight, and estimated weight. Each line is normalized to its own range; use the per-metric range labels for values. The graph menu switches to an individual measurement view and back.
+
 Add coffees in **Beans** and link each to a shot review; coffee metadata and shot links are stored locally. Bean cards summarize linked shots and ratings, and selecting a bean focuses Brew Coach on that coffee. The GaggiMate `beanType` field is updated with the linked bean name on review sync. BeanPilot uses a bean-to-brew workflow inspired by coffee-tracking apps such as [Beanconqueror](https://github.com/graphefruit/Beanconqueror), while retaining its own dark, telemetry-first visual design.
 
-Open **Profiles** to list profiles stored on GaggiMate, select one, load it into the multi-phase editor, or import a profile JSON file from the device. The editor validates pressure/flow pump targets, phase timings, transitions, valve state, temperature, and stop conditions before saving to the machine. Profile JSON follows the [GaggiMate profile schema](https://github.com/jniebuhr/gaggimate/blob/master/schema/profile.json).
+Open **Profiles** to list profiles stored on GaggiMate, select one, load it into the multi-phase editor, or import a profile JSON file from the device. Profiles show a miniature pump-target curve; in the editor, drag a phase point vertically to change its pressure, flow, or fixed pump target and horizontally to change phase duration. The editor validates pressure/flow pump targets, phase timings, transitions, valve state, temperature, and stop conditions before saving to the machine. Profile JSON follows the [GaggiMate profile schema](https://github.com/jniebuhr/gaggimate/blob/master/schema/profile.json).
 
 BeanPilot does not provide remote brew-start or flush controls. Use the machine's physical controls to operate the espresso machine. The app focuses on observing extraction data, reviewing shots, building or adjusting profiles, and making recommendations based on the selected coffee's shot history.
 

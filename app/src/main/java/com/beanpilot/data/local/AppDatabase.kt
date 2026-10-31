@@ -11,7 +11,7 @@ import com.beanpilot.data.local.entity.ShotEntity
 
 @Database(
     entities = [CoffeeBeanEntity::class, ShotEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +48,12 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE shots ADD COLUMN coffeeBeanId INTEGER")
                 db.execSQL("CREATE INDEX index_shots_coffeeBeanId ON shots(coffeeBeanId)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shots ADD COLUMN bodyRating INTEGER")
             }
         }
     }

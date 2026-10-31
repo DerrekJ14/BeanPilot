@@ -1,13 +1,16 @@
 package com.beanpilot.ui.dashboard
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -30,27 +33,31 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -64,6 +71,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -73,6 +81,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beanpilot.data.remote.MachineConnectionStatus
+import com.beanpilot.data.remote.GaggiMateShotSample
 import com.beanpilot.domain.recommendation.BrewCoach
 import com.beanpilot.domain.recommendation.BrewRecommendation
 import com.beanpilot.domain.model.ShotRecord
@@ -82,6 +91,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("DEPRECATION")
@@ -137,6 +147,29 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         }
     }
 
+    val profileEditorOpen = showProfileManager && uiState.profileUiState.editingProfile != null
+    val canNavigateBack = profileEditorOpen ||
+        showDashboardSettings ||
+        selectedShotId != null ||
+        showProfileManager ||
+        showCoffeeLibrary ||
+        showShotHistory ||
+        widgetEditMode ||
+        (uiState.connection.status == MachineConnectionStatus.Connected && connectionExpanded)
+    BackHandler(enabled = canNavigateBack) {
+        when {
+            profileEditorOpen -> viewModel.closeProfileEditor()
+            showDashboardSettings -> showDashboardSettings = false
+            selectedShotId != null -> selectedShotId = null
+            showProfileManager -> showProfileManager = false
+            showCoffeeLibrary -> showCoffeeLibrary = false
+            showShotHistory -> showShotHistory = false
+            widgetEditMode -> widgetEditMode = false
+            uiState.connection.status == MachineConnectionStatus.Connected && connectionExpanded ->
+                connectionExpanded = false
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -144,6 +177,7 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                     Text(
                         when {
                             showCoffeeLibrary -> "Coffee Library"
+                            selectedShotId != null -> "Shot Review"
                             showShotHistory -> "Shot History"
                             showProfileManager -> "GaggiMate Profiles"
                             showDashboardSettings -> "Saved Dashboards"
@@ -155,7 +189,6 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
             )
         },
         bottomBar = {
-            val profileEditorOpen = showProfileManager && uiState.profileUiState.editingProfile != null
             if (
                 uiState.connection.status == MachineConnectionStatus.Connected &&
                 selectedShotId == null &&
@@ -238,6 +271,16 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                 onBack = { showDashboardSettings = false },
                 modifier = Modifier.padding(paddingValues),
             )
+        } else if (selectedShot != null) {
+            ShotReviewScreen(
+                shot = selectedShot,
+                coffees = uiState.coffeeBeans,
+                detailState = uiState.shotDetail,
+                saveMessage = uiState.reviewSaveMessage,
+                onBack = { selectedShotId = null },
+                onSave = viewModel::saveShotReview,
+                modifier = Modifier.padding(paddingValues),
+            )
         } else if (showShotHistory) {
             ShotHistoryScreen(
                 shots = uiState.recentShots,
@@ -269,16 +312,6 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-        } else if (selectedShot != null) {
-            ShotReviewScreen(
-                shot = selectedShot,
-                coffees = uiState.coffeeBeans,
-                detailState = uiState.shotDetail,
-                saveMessage = uiState.reviewSaveMessage,
-                onBack = { selectedShotId = null },
-                onSave = viewModel::saveShotReview,
-                modifier = Modifier.padding(paddingValues),
-        )
     } else {
         if (uiState.connection.status != MachineConnectionStatus.Connected) {
             ConnectionLoginScreen(
@@ -969,7 +1002,14 @@ private fun ShotReviewScreen(
     var coffeeBeanId by rememberSaveable(shot.id) { mutableStateOf(shot.coffeeBeanId) }
     var coffeeMenuExpanded by rememberSaveable(shot.id) { mutableStateOf(false) }
     var rating by rememberSaveable(shot.id) { mutableStateOf(shot.rating) }
-    var balanceTaste by rememberSaveable(shot.id) { mutableStateOf(shot.balanceTaste) }
+    var balanceTaste by rememberSaveable(shot.id) {
+        mutableStateOf(shot.balanceTaste.toTasteBalanceScore())
+    }
+    var bodyRating by rememberSaveable(shot.id) { mutableStateOf(shot.bodyRating) }
+    val shownMetrics = remember(shot.id) {
+        mutableStateListOf("pressure", "temperature", "flow", "measuredWeight", "estimatedWeight")
+    }
+    var individualMetric by rememberSaveable(shot.id) { mutableStateOf<String?>(null) }
     var notes by rememberSaveable(shot.id) { mutableStateOf(shot.notes.orEmpty()) }
     var validationError by rememberSaveable(shot.id) { mutableStateOf<String?>(null) }
     var reviewEdited by rememberSaveable(shot.id) { mutableStateOf(false) }
@@ -983,7 +1023,7 @@ private fun ShotReviewScreen(
                 doseOut = remoteNotes.doseOut ?: doseOut
                 grinderSetting = remoteNotes.grindSetting ?: grinderSetting
                 rating = remoteNotes.rating?.takeIf { it in 1..5 } ?: rating
-                balanceTaste = remoteNotes.balanceTaste ?: balanceTaste
+                balanceTaste = remoteNotes.balanceTaste.toTasteBalanceScore() ?: balanceTaste
                 notes = remoteNotes.notes ?: notes
             }
         }
@@ -1114,18 +1154,69 @@ private fun ShotReviewScreen(
             minLines = 3,
         )
         Text("Taste balance", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("bitter", "balanced", "sour").forEach { taste ->
-                FilterChip(
-                    selected = balanceTaste == taste,
-                    onClick = {
-                        reviewEdited = true
-                        balanceTaste = if (balanceTaste == taste) "" else taste
-                    },
-                    label = { Text(taste.replaceFirstChar(Char::uppercase)) },
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("BITTER", style = MaterialTheme.typography.labelSmall)
+            Text(
+                balanceTaste?.toString() ?: "—",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text("SOUR", style = MaterialTheme.typography.labelSmall)
         }
+        Slider(
+            value = (balanceTaste ?: 5).toFloat(),
+            onValueChange = {
+                reviewEdited = true
+                balanceTaste = it.roundToInt()
+            },
+            valueRange = 1f..10f,
+            steps = 8,
+            modifier = Modifier.semantics {
+                contentDescription = "Taste balance from bitter to sour, ${balanceTaste ?: "not rated"} of 10"
+            },
+        )
+        TextButton(
+            onClick = {
+                reviewEdited = true
+                balanceTaste = null
+            },
+            enabled = balanceTaste != null,
+        ) { Text("Clear taste balance") }
+        Text("Body", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("LIGHT", style = MaterialTheme.typography.labelSmall)
+            Text(
+                bodyRating?.toString() ?: "—",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Text("FULL", style = MaterialTheme.typography.labelSmall)
+        }
+        Slider(
+            value = (bodyRating ?: 5).toFloat(),
+            onValueChange = {
+                reviewEdited = true
+                bodyRating = it.roundToInt()
+            },
+            valueRange = 1f..10f,
+            steps = 8,
+            modifier = Modifier.semantics {
+                contentDescription = "Body rating from light to full, ${bodyRating ?: "not rated"} of 10"
+            },
+        )
+        TextButton(
+            onClick = {
+                reviewEdited = true
+                bodyRating = null
+            },
+            enabled = bodyRating != null,
+        ) { Text("Clear body rating") }
         Button(
             onClick = {
                 val parsedDoseIn = doseIn.toOptionalDouble()
@@ -1152,7 +1243,8 @@ private fun ShotReviewScreen(
                             doseOutGr = parsedDoseOut,
                             grinderSetting = parsedGrinderSetting,
                             rating = rating,
-                            balanceTaste = balanceTaste,
+                            balanceTaste = balanceTaste?.toString(),
+                            bodyRating = bodyRating,
                             ratio = ratio,
                             notes = notes.trim(),
                         ),
@@ -1237,43 +1329,11 @@ private fun ShotReviewScreen(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                MetricTrendChart(
-                    title = "Pressure",
-                    unit = "bar",
-                    points = detailState.samples.mapNotNull { it.pressureBar?.let { value -> it.timeMs to value } },
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                MetricTrendChart(
-                    title = "Temperature",
-                    unit = "°C",
-                    points = detailState.samples.mapNotNull {
-                        it.temperatureC?.let { value -> it.timeMs to value }
-                    },
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-                MetricTrendChart(
-                    title = "Flow",
-                    unit = "ml/s",
-                    points = detailState.samples.mapNotNull {
-                        it.flowMlPerSec?.let { value -> it.timeMs to value }
-                    },
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                MetricTrendChart(
-                    title = "Measured scale weight",
-                    unit = "g",
-                    points = detailState.samples.mapNotNull {
-                        it.measuredWeightGr?.let { value -> it.timeMs to value }
-                    },
-                    color = MaterialTheme.colorScheme.error,
-                )
-                MetricTrendChart(
-                    title = "Estimated weight",
-                    unit = "g",
-                    points = detailState.samples.mapNotNull {
-                        it.estimatedWeightGr?.let { value -> it.timeMs to value }
-                    },
-                    color = MaterialTheme.colorScheme.error,
+                ShotMeasurementsChart(
+                    samples = detailState.samples,
+                    shownMetrics = shownMetrics,
+                    individualMetric = individualMetric,
+                    onIndividualMetricChange = { individualMetric = it },
                 )
             }
         }
@@ -1568,6 +1628,246 @@ private fun ShotHistoryScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ShotMeasurementsChart(
+    samples: List<GaggiMateShotSample>,
+    shownMetrics: MutableList<String>,
+    individualMetric: String?,
+    onIndividualMetricChange: (String?) -> Unit,
+) {
+    val metrics = listOf(
+        ShotMetric(
+            id = "pressure",
+            label = "Pressure",
+            shortLabel = "PRESS",
+            unit = "bar",
+            values = samples.mapNotNull { sample -> sample.pressureBar?.let { sample.timeMs to it } },
+            color = MaterialTheme.colorScheme.primary,
+            icon = Icons.Filled.Speed,
+        ),
+        ShotMetric(
+            id = "temperature",
+            label = "Temperature",
+            shortLabel = "TEMP",
+            unit = "°C",
+            values = samples.mapNotNull { sample -> sample.temperatureC?.let { sample.timeMs to it } },
+            color = MaterialTheme.colorScheme.tertiary,
+            icon = Icons.Filled.Thermostat,
+        ),
+        ShotMetric(
+            id = "flow",
+            label = "Flow",
+            shortLabel = "FLOW",
+            unit = "ml/s",
+            values = samples.mapNotNull { sample -> sample.flowMlPerSec?.let { sample.timeMs to it } },
+            color = MaterialTheme.colorScheme.secondary,
+            icon = Icons.Filled.WaterDrop,
+        ),
+        ShotMetric(
+            id = "measuredWeight",
+            label = "Measured weight",
+            shortLabel = "MEAS",
+            unit = "g",
+            values = samples.mapNotNull { sample -> sample.measuredWeightGr?.let { sample.timeMs to it } },
+            color = MaterialTheme.colorScheme.error,
+            icon = Icons.Filled.Scale,
+        ),
+        ShotMetric(
+            id = "estimatedWeight",
+            label = "Estimated weight",
+            shortLabel = "EST",
+            unit = "g",
+            values = samples.mapNotNull { sample -> sample.estimatedWeightGr?.let { sample.timeMs to it } },
+            color = MaterialTheme.colorScheme.inversePrimary,
+            icon = Icons.Filled.Scale,
+        ),
+    )
+    val selectedIndividual = metrics.firstOrNull { it.id == individualMetric }
+    if (selectedIndividual != null) {
+        var menuExpanded by rememberSaveable(individualMetric) { mutableStateOf(false) }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${selectedIndividual.label} graph", style = MaterialTheme.typography.titleMedium)
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.semantics {
+                            contentDescription = "Choose graph view"
+                        },
+                    ) {
+                        Icon(Icons.Filled.ExpandMore, contentDescription = null)
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Combined graph") },
+                            onClick = {
+                                onIndividualMetricChange(null)
+                                menuExpanded = false
+                            },
+                        )
+                        metrics.forEach { metric ->
+                            DropdownMenuItem(
+                                text = { Text("${metric.label} only") },
+                                onClick = {
+                                    onIndividualMetricChange(metric.id)
+                                    menuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            MetricTrendChart(
+                title = selectedIndividual.label,
+                unit = selectedIndividual.unit,
+                points = selectedIndividual.values,
+                color = selectedIndividual.color,
+            )
+        }
+    } else {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Combined measurements", style = MaterialTheme.typography.titleMedium)
+                    Box {
+                        var menuExpanded by rememberSaveable { mutableStateOf(false) }
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.semantics {
+                                contentDescription = "Split measurements into individual graphs"
+                            },
+                        ) {
+                            Icon(Icons.Filled.ExpandMore, contentDescription = null)
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Combined graph") },
+                                onClick = {
+                                    onIndividualMetricChange(null)
+                                    menuExpanded = false
+                                },
+                            )
+                            metrics.forEach { metric ->
+                                DropdownMenuItem(
+                                    text = { Text("${metric.label} only") },
+                                    onClick = {
+                                        onIndividualMetricChange(metric.id)
+                                        menuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(
+                    "Each line is normalized to its own range. Values and units are shown in the controls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    metrics.forEach { metric ->
+                        FilterChip(
+                            selected = metric.id in shownMetrics,
+                            onClick = {
+                                if (metric.id in shownMetrics) shownMetrics.remove(metric.id)
+                                else shownMetrics.add(metric.id)
+                            },
+                            modifier = Modifier.semantics {
+                                contentDescription = "${metric.label} ${if (metric.id in shownMetrics) "visible" else "hidden"}"
+                            },
+                            label = { Text(metric.shortLabel) },
+                            leadingIcon = {
+                                Icon(metric.icon, contentDescription = null, tint = metric.color)
+                            },
+                        )
+                    }
+                }
+                val visibleMetrics = metrics.filter { it.id in shownMetrics }
+                Text(
+                    visibleMetrics.joinToString(" · ") { metric ->
+                        val range = metric.values.takeIf { it.isNotEmpty() }?.let { values ->
+                            "${values.minOf { it.second }.oneDecimal()}–${values.maxOf { it.second }.oneDecimal()} ${metric.unit}"
+                        } ?: "— ${metric.unit}"
+                        "${metric.label}: $range"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (visibleMetrics.isEmpty()) {
+                    Text("Turn on a measurement to show its trend.")
+                } else {
+                    Canvas(modifier = Modifier.fillMaxWidth().height(190.dp)) {
+                        val allTimes = visibleMetrics.flatMap { metric -> metric.values.map { it.first } }
+                        if (allTimes.isEmpty()) return@Canvas
+                        val firstTime = allTimes.minOrNull()!!.toFloat()
+                        val timeSpan = (allTimes.maxOrNull()!! - allTimes.minOrNull()!!).toFloat()
+                            .coerceAtLeast(1f)
+                        visibleMetrics.forEach { metric ->
+                            if (metric.values.size >= 2) {
+                                val values = metric.values.map { it.second }
+                                val minValue = values.minOrNull()!!.toFloat()
+                                val valueSpan = (values.maxOrNull()!! - minValue).toFloat().coerceAtLeast(0.01f)
+                                val path = Path()
+                                metric.values.forEachIndexed { index, point ->
+                                    val x = ((point.first.toFloat() - firstTime) / timeSpan) * size.width
+                                    val y = size.height -
+                                        ((point.second.toFloat() - minValue) / valueSpan) * size.height
+                                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                                }
+                                drawPath(path, metric.color, style = Stroke(width = 2.5.dp.toPx()))
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "${"%.1f".format(Locale.getDefault(), samples.first().timeMs / 1_000.0)} s",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            "${"%.1f".format(Locale.getDefault(), samples.last().timeMs / 1_000.0)} s",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class ShotMetric(
+    val id: String,
+    val label: String,
+    val shortLabel: String,
+    val unit: String,
+    val values: List<Pair<Long, Double>>,
+    val color: androidx.compose.ui.graphics.Color,
+    val icon: ImageVector,
+)
+
 @Composable
 private fun MetricTrendChart(
     title: String,
@@ -1631,6 +1931,14 @@ private fun MetricTrendChart(
 
 private fun String.toOptionalDouble(): Double? =
     trim().takeIf { it.isNotEmpty() }?.replace(',', '.')?.toDoubleOrNull()
+
+private fun String?.toTasteBalanceScore(): Int? =
+    when (this?.trim()?.lowercase(Locale.ROOT)) {
+        "bitter" -> 2
+        "balanced" -> 5
+        "sour" -> 9
+        else -> this?.toIntOrNull()?.takeIf { it in 1..10 }
+    }
 
 private const val MAX_GAGGIMATE_NOTE_LENGTH = 200
 

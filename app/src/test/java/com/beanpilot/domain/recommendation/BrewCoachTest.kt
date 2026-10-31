@@ -33,6 +33,38 @@ class BrewCoachTest {
     }
 
     @Test
+    fun numericTasteBalanceAtSourEndRecommendsSlowingExtraction() {
+        val recommendation = BrewCoach.recommend(
+            listOf(
+                ShotRecord(
+                    id = 1,
+                    brewTimeMs = 30_000,
+                    profileUsed = "Adaptive",
+                    balanceTaste = "9",
+                ),
+            ),
+        )
+
+        assertEquals("Slow the extraction slightly", recommendation.title)
+    }
+
+    @Test
+    fun numericTasteBalanceAtBitterEndRecommendsSpeedingExtraction() {
+        val recommendation = BrewCoach.recommend(
+            listOf(
+                ShotRecord(
+                    id = 1,
+                    brewTimeMs = 30_000,
+                    profileUsed = "Adaptive",
+                    balanceTaste = "2",
+                ),
+            ),
+        )
+
+        assertEquals("Speed the extraction slightly", recommendation.title)
+    }
+
+    @Test
     fun bestRatedSameCoffeeShotProvidesPersonalizedRatioAdvice() {
         val recommendation = BrewCoach.recommend(
             listOf(

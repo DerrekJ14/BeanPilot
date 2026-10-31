@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -28,9 +30,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -129,6 +135,10 @@ fun ProfileManagerScreen(
                     ) {
                         Text(profile.label, style = MaterialTheme.typography.titleMedium)
                         Text("${profile.type} · ${profile.phases.size} phases")
+                        ProfileCurveChart(
+                            phases = profile.phases.map(ProfilePhaseDraft::from),
+                            compact = true,
+                        )
                         if (profile.description.isNotBlank()) Text(profile.description)
                         if (profile.selected == true) {
                             Text("Currently selected", color = MaterialTheme.colorScheme.primary)
@@ -183,6 +193,13 @@ fun ProfileEditorScreen(
             Text(
                 "GaggiMate runs these phases in order. Review pressure, flow, targets, and timing carefully before saving.",
                 style = MaterialTheme.typography.bodyMedium,
+            )
+            ProfileCurveChart(
+                phases = phases,
+                compact = false,
+                onPhaseChange = { index, phase ->
+                    phases = phases.toMutableList().also { it[index] = phase }
+                },
             )
             OutlinedTextField(label, { label = it }, Modifier.fillMaxWidth(), label = { Text("Profile name") })
             ProfileDropdown("Profile type", type, listOf("standard", "pro"), { type = it })
@@ -374,6 +391,241 @@ private fun ProfilePhaseEditor(
         }
     }
 }
+
+@Composable
+private fun ProfileCurveChart(
+    phases: List<ProfilePhaseDraft>,
+    compact: Boolean,
+    onPhaseChange: ((Int, ProfilePhaseDraft) -> Unit)? = null,
+) {
+    val currentPhases = rememberUpdatedState(phases)
+    val currentOnPhaseChange = rememberUpdatedState(onPhaseChange)
+    val density = LocalDensity.current.density
+    val pressureColor = MaterialTheme.colorScheme.primary
+    val flowColor = MaterialTheme.colorScheme.tertiary
+    val dutyColor = MaterialTheme.colorScheme.error
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val chartHeight = if (compact) 82.dp else 220.dp
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(if (compact) 8.dp else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (!compact) {
+                Text("PUMP TARGET · DRAG POINTS TO EDIT", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Horizontal movement adjusts phase duration; vertical movement adjusts its pump target.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(chartHeight)
+                    .then(
+                        if (onPhaseChange == null) Modifier else Modifier.pointerInput(Unit) {
+                            var draggingIndex: Int? = null
+                            detectDragGestures(
+                                onDragStart = { position ->
+                                    val points = currentPhases.value.chartPoints(
+                                        size.width.toFloat(),
+                                        size.height.toFloat(),
+                                        density,
+                                        pressureColor,
+                                        flowColor,
+                                        dutyColor,
+                                    )
+                                    draggingIndex = points.indices.minByOrNull { index ->
+                                        (points[index].position - position).getDistance()
+                                    }?.takeIf { index ->
+                                        (points[index].position - position).getDistance() <=
+                                            48.dp.value * density
+                                    }
+                                },
+                                onDragEnd = { draggingIndex = null },
+                                onDragCancel = { draggingIndex = null },
+                            ) { change, dragAmount ->
+                                val index = draggingIndex
+                                val latestPhases = currentPhases.value
+                                val update = currentOnPhaseChange.value
+                                if (index != null && update != null && index in latestPhases.indices) {
+                                    val phase = latestPhases[index]
+                                    val totalDuration = latestPhases.sumOf {
+                                        it.duration.toDoubleOrNull() ?: 25.0
+                                    }.coerceAtLeast(0.5)
+                                    val usableWidth = (size.width - 32.dp.value * density).coerceAtLeast(1f)
+                                    val usableHeight = (size.height - 32.dp.value * density).coerceAtLeast(1f)
+                                    val durationDelta = dragAmount.x / usableWidth * totalDuration * 2.0
+                                    val newDuration = (
+                                        (phase.duration.toDoubleOrNull() ?: 25.0) + durationDelta
+                                        ).coerceIn(0.5, 300.0)
+                                    val maximum = phase.targetMaximum()
+                                    val currentValue = phase.targetValue()
+                                    val newTarget = (
+                                        currentValue - dragAmount.y / usableHeight * maximum
+                                        ).coerceIn(0.0, maximum)
+                                    update(
+                                        index,
+                                        phase.copy(
+                                            duration = newDuration.toOneDecimalString(),
+                                            pumpPressure = if (phase.pumpMode == "pressure") {
+                                                newTarget.toOneDecimalString()
+                                            } else {
+                                                phase.pumpPressure
+                                            },
+                                            pumpFlow = if (phase.pumpMode == "flow") {
+                                                newTarget.toOneDecimalString()
+                                            } else {
+                                                phase.pumpFlow
+                                            },
+                                            pumpDuty = if (phase.pumpMode == "fixed") {
+                                                newTarget.toInt().toString()
+                                            } else {
+                                                phase.pumpDuty
+                                            },
+                                        ),
+                                    )
+                                }
+                                change.consume()
+                            }
+                        },
+                    ),
+            ) {
+                val points = phases.chartPoints(
+                    size.width,
+                    size.height,
+                    density,
+                    pressureColor,
+                    flowColor,
+                    dutyColor,
+                )
+                val left = 16.dp.value * density
+                val right = size.width - left
+                val top = 12.dp.value * density
+                val bottom = size.height - top
+                repeat(4) { row ->
+                    val y = top + (bottom - top) * row / 3f
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(left, y),
+                        end = Offset(right, y),
+                        strokeWidth = 1.dp.value * density,
+                    )
+                }
+                repeat(5) { column ->
+                    val x = left + (right - left) * column / 4f
+                    drawLine(
+                        color = gridColor.copy(alpha = 0.6f),
+                        start = Offset(x, top),
+                        end = Offset(x, bottom),
+                        strokeWidth = 1.dp.value * density,
+                    )
+                }
+                points.zipWithNext().forEach { (first, second) ->
+                    if (first.mode == second.mode) {
+                        drawLine(
+                            color = first.color,
+                            start = first.position,
+                            end = second.position,
+                            strokeWidth = (if (compact) 2.dp.value else 3.dp.value) * density,
+                        )
+                    }
+                }
+                points.forEach { point ->
+                    drawCircle(
+                        color = point.color.copy(alpha = 0.25f),
+                        radius = (if (compact) 7.dp.value else 13.dp.value) * density,
+                        center = point.position,
+                    )
+                    drawCircle(
+                        color = point.color,
+                        radius = (if (compact) 3.dp.value else 6.dp.value) * density,
+                        center = point.position,
+                    )
+                }
+            }
+            if (!compact) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    phases.forEachIndexed { index, phase ->
+                        val unit = when (phase.pumpMode) {
+                            "flow" -> "g/s"
+                            "fixed" -> "%"
+                            else -> "bar"
+                        }
+                        Text(
+                            "P${index + 1} ${phase.targetValue().toOneDecimalString()} $unit",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (phase.pumpMode) {
+                                "flow" -> MaterialTheme.colorScheme.tertiary
+                                "fixed" -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class ProfileChartPoint(
+    val position: Offset,
+    val mode: String,
+    val color: androidx.compose.ui.graphics.Color,
+)
+
+private fun List<ProfilePhaseDraft>.chartPoints(
+    width: Float,
+    height: Float,
+    density: Float,
+    pressureColor: androidx.compose.ui.graphics.Color,
+    flowColor: androidx.compose.ui.graphics.Color,
+    dutyColor: androidx.compose.ui.graphics.Color,
+): List<ProfileChartPoint> {
+    if (isEmpty()) return emptyList()
+    val paddingX = 16.dp.value * density
+    val paddingY = 12.dp.value * density
+    val usableWidth = (width - paddingX * 2).coerceAtLeast(1f)
+    val usableHeight = (height - paddingY * 2).coerceAtLeast(1f)
+    val totalDuration = sumOf { it.duration.toDoubleOrNull() ?: 25.0 }.coerceAtLeast(0.5)
+    var elapsed = 0.0
+    return map { phase ->
+        val duration = (phase.duration.toDoubleOrNull() ?: 25.0).coerceAtLeast(0.5)
+        val x = paddingX + ((elapsed + duration / 2.0) / totalDuration * usableWidth).toFloat()
+        val y = paddingY + (1f - (phase.targetValue() / phase.targetMaximum()).toFloat()) * usableHeight
+        elapsed += duration
+        ProfileChartPoint(
+            position = Offset(x, y.coerceIn(paddingY, height - paddingY)),
+            mode = phase.pumpMode,
+            color = when (phase.pumpMode) {
+                "flow" -> flowColor
+                "fixed" -> dutyColor
+                else -> pressureColor
+            },
+        )
+    }
+}
+
+private fun ProfilePhaseDraft.targetValue(): Double =
+    when (pumpMode) {
+        "flow" -> pumpFlow.toDoubleOrNull() ?: 0.0
+        "fixed" -> pumpDuty.toDoubleOrNull() ?: 0.0
+        else -> pumpPressure.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+    }
+
+private fun ProfilePhaseDraft.targetMaximum(): Double =
+    when (pumpMode) {
+        "flow" -> 15.0
+        "fixed" -> 100.0
+        else -> 12.0
+    }
+
+private fun Double.toOneDecimalString(): String =
+    java.math.BigDecimal.valueOf(this).setScale(1, java.math.RoundingMode.HALF_UP)
+        .stripTrailingZeros().toPlainString()
 
 @Composable
 private fun ProfileDropdown(

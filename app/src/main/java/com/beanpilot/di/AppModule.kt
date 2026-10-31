@@ -7,6 +7,7 @@ import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_1_2
 import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_2_3
 import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_3_4
 import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_4_5
+import com.beanpilot.data.local.AppDatabase.Companion.MIGRATION_5_6
 import com.beanpilot.data.local.dao.CoffeeBeanDao
 import com.beanpilot.data.local.dao.ShotDao
 import dagger.Module
@@ -52,6 +53,7 @@ object AppModule {
             .addMigrations(MIGRATION_2_3)
             .addMigrations(MIGRATION_3_4)
             .addMigrations(MIGRATION_4_5)
+            .addMigrations(MIGRATION_5_6)
             .build()
 
     @Provides

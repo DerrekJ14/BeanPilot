@@ -88,7 +88,8 @@ object BrewCoach {
         }
 
         val taste = latest.balanceTaste?.trim()?.lowercase(Locale.ROOT)
-        if (taste == "sour" || latest.brewTimeMs < 20_000) {
+        val tasteScore = taste?.toIntOrNull()?.takeIf { it in 1..10 }
+        if (taste == "sour" || tasteScore?.let { it >= 8 } == true || latest.brewTimeMs < 20_000) {
             return BrewRecommendation(
                 title = "Slow the extraction slightly",
                 detail = "The shot was short or marked sour. Try a slightly finer grind, keep dose and profile " +
@@ -97,7 +98,7 @@ object BrewCoach {
                 confidence = "STARTING POINT",
             )
         }
-        if (taste == "bitter" || latest.brewTimeMs > 40_000) {
+        if (taste == "bitter" || tasteScore?.let { it <= 3 } == true || latest.brewTimeMs > 40_000) {
             return BrewRecommendation(
                 title = "Speed the extraction slightly",
                 detail = "The shot was long or marked bitter. Try a slightly coarser grind, keep dose and profile " +

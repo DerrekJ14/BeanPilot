@@ -30,6 +30,7 @@ class ShotRepository @Inject constructor(
                     grinderSetting = entity.grinderSetting,
                     rating = entity.rating,
                     balanceTaste = entity.balanceTaste,
+                    bodyRating = entity.bodyRating,
                     incomplete = entity.incomplete,
                     notes = entity.notes,
                 )
@@ -52,6 +53,7 @@ class ShotRepository @Inject constructor(
                 grinderSetting = shot.grinderSetting,
                 rating = shot.rating,
                 balanceTaste = shot.balanceTaste,
+                bodyRating = shot.bodyRating,
                 incomplete = shot.incomplete,
                 notes = shot.notes,
             )
@@ -97,6 +99,7 @@ class ShotRepository @Inject constructor(
                 grinderSetting = shot.grinderSetting,
                 rating = shot.rating,
                 balanceTaste = shot.balanceTaste,
+                bodyRating = shot.bodyRating,
                 incomplete = shot.incomplete,
                 notes = shot.notes,
             ),
